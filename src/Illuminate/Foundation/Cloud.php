@@ -5,6 +5,7 @@ namespace Illuminate\Foundation;
 use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Foundation\Bootstrap\LoadConfiguration;
+use Illuminate\Foundation\Queue\CloudQueueEventEmitter;
 use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\SocketHandler;
 use PDO;
@@ -32,6 +33,7 @@ class Cloud
             },
             HandleExceptions::class => function () use ($app) {
                 static::configureCloudLogging($app);
+                static::configureQueueEventEmission($app);
             },
             default => fn () => true,
         })();
@@ -136,5 +138,29 @@ class Cloud
                 'persistent' => true,
             ],
         ]);
+    }
+
+    /**
+     * Configure cloud queue event emission if enabled.
+     */
+    public static function configureQueueEventEmission(Application $app): void
+    {
+        if (! static::queueEventEmissionEnabled()) {
+            return;
+        }
+
+        (new CloudQueueEventEmitter($app))->register($app['events']);
+    }
+
+    /**
+     * Determine if cloud queue event emission is enabled.
+     */
+    protected static function queueEventEmissionEnabled(): bool
+    {
+        $enabled = $_ENV['LARAVEL_CLOUD_QUEUE_EVENTS']
+            ?? $_SERVER['LARAVEL_CLOUD_QUEUE_EVENTS']
+            ?? '1';
+
+        return ! in_array(strtolower((string) $enabled), ['0', 'false', 'off'], true);
     }
 }
