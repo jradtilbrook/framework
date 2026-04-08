@@ -4,6 +4,7 @@ namespace Illuminate\Tests\Integration\Foundation;
 
 use Illuminate\Foundation\Cloud;
 use Illuminate\Queue\CloudQueueEventEmitter;
+use Illuminate\Support\Facades\Context;
 use Orchestra\Testbench\TestCase;
 use RuntimeException;
 
@@ -11,6 +12,8 @@ class CloudQueueEventEmitterTest extends TestCase
 {
     protected function tearDown(): void
     {
+        Context::flush();
+
         CloudQueueEventEmitter::writeUsing(null);
         CloudQueueEventEmitter::disable();
 
@@ -29,6 +32,8 @@ class CloudQueueEventEmitterTest extends TestCase
             $records[] = json_decode($payload, true);
         });
 
+        Context::addHidden('laravel_cloud_request_id', 'req-abc-123');
+
         Cloud::configureQueueEventEmission($this->app);
 
         $createdAt = time() - 1;
@@ -42,7 +47,6 @@ class CloudQueueEventEmitterTest extends TestCase
                 'uuid' => 'job-1',
                 'displayName' => 'App\\Jobs\\ShipOrder',
                 'createdAt' => $createdAt,
-                'traceparent' => '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
             ]),
             5,
         );
@@ -54,7 +58,6 @@ class CloudQueueEventEmitterTest extends TestCase
             queue: 'default',
             attempts: 2,
             createdAt: $createdAt,
-            traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
         );
 
         CloudQueueEventEmitter::processing('redis', $job);
@@ -80,9 +83,7 @@ class CloudQueueEventEmitterTest extends TestCase
         $this->assertSame('App\\Jobs\\ShipOrder', $queued['job.name']);
         $this->assertSame(5.0, $queued['laravel.queue.delay_s']);
         $this->assertSame($createdAt, $queued['laravel.queue.created_at_unix']);
-        $this->assertSame('4bf92f3577b34da6a3ce929d0e0e4736', $queued['trace_id']);
-        $this->assertSame('00f067aa0ba902b7', $queued['span_id']);
-        $this->assertSame('01', $queued['trace_flags']);
+        $this->assertSame('req-abc-123', $queued['correlation_id']);
         $this->assertArrayHasKey('service.name', $queued);
         $this->assertArrayHasKey('deployment.environment.name', $queued);
 
@@ -90,12 +91,13 @@ class CloudQueueEventEmitterTest extends TestCase
         $this->assertSame('process', $processing['messaging.operation.name']);
         $this->assertSame(2, $processing['laravel.queue.attempt']);
         $this->assertIsFloat($processing['laravel.queue.wait_s']);
+        $this->assertSame('req-abc-123', $processing['correlation_id']);
 
         $this->assertSame('job.processed', $processed['event_name']);
         $this->assertSame('process', $processed['messaging.operation.name']);
         $this->assertSame('processed', $processed['laravel.queue.result']);
         $this->assertIsFloat($processed['laravel.queue.duration_s']);
-        $this->assertSame('4bf92f3577b34da6a3ce929d0e0e4736', $processed['trace_id']);
+        $this->assertSame('req-abc-123', $processed['correlation_id']);
     }
 
     public function test_it_emits_failed_event_with_a_truncated_error_message()
@@ -188,7 +190,6 @@ class CloudQueueEventEmitterFakeJob
         public string $queue,
         public int $attempts,
         public int $createdAt,
-        public ?string $traceparent = null,
         public bool $deleted = false,
     ) {
     }
@@ -220,10 +221,9 @@ class CloudQueueEventEmitterFakeJob
 
     public function payload(): array
     {
-        return array_filter([
+        return [
             'createdAt' => $this->createdAt,
-            'traceparent' => $this->traceparent,
-        ]);
+        ];
     }
 
     public function isDeleted(): bool

@@ -3,6 +3,7 @@
 namespace Illuminate\Queue;
 
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Support\Facades\Context;
 
 class CloudQueueEventEmitter
 {
@@ -109,7 +110,7 @@ class CloudQueueEventEmitter
                 'laravel.queue.attempt' => $emitter->toInteger($decodedPayload['attempts'] ?? null),
                 'laravel.queue.delay_s' => $emitter->toFloat($decodedPayload['delay'] ?? $delay),
                 'laravel.queue.created_at_unix' => $emitter->toInteger($decodedPayload['createdAt'] ?? null),
-                ...$emitter->traceContextFromPayload($decodedPayload),
+                ...$emitter->correlationRecord(),
             ]);
         });
     }
@@ -127,14 +128,12 @@ class CloudQueueEventEmitter
                 $emitter->processingStartedAt[$key] = \microtime(true);
             }
 
-            $payload = $emitter->call($job, 'payload');
-
             $emitter->emit([
                 ...$emitter->baseRecord('job.processing', $connectionName, $jobContext['queue']),
                 'messaging.operation.name' => 'process',
                 ...$emitter->jobRecord($jobContext),
                 'laravel.queue.wait_s' => $emitter->waitSeconds($job),
-                ...$emitter->traceContextFromPayload(\is_array($payload) ? $payload : []),
+                ...$emitter->correlationRecord(),
             ]);
         });
     }
@@ -147,8 +146,6 @@ class CloudQueueEventEmitter
         static::forConnection($connectionName)?->safely(function ($emitter) use ($connectionName, $job) {
             $jobContext = $emitter->jobContext($job);
             $key = $emitter->processingKey($jobContext['job.uuid'], $jobContext['job.id']);
-            $payload = $emitter->call($job, 'payload');
-
             $emitter->emit([
                 ...$emitter->baseRecord('job.processed', $connectionName, $jobContext['queue']),
                 'messaging.operation.name' => 'process',
@@ -156,7 +153,7 @@ class CloudQueueEventEmitter
                 'laravel.queue.wait_s' => $emitter->waitSeconds($job),
                 'laravel.queue.duration_s' => $emitter->durationSeconds($key),
                 'laravel.queue.result' => $emitter->call($job, 'isDeleted') ? 'deleted' : 'processed',
-                ...$emitter->traceContextFromPayload(\is_array($payload) ? $payload : []),
+                ...$emitter->correlationRecord(),
             ]);
 
             $emitter->forgetDuration($key);
@@ -173,8 +170,6 @@ class CloudQueueEventEmitter
         static::forConnection($connectionName)?->safely(function ($emitter) use ($connectionName, $job, $backoff) {
             $jobContext = $emitter->jobContext($job);
             $key = $emitter->processingKey($jobContext['job.uuid'], $jobContext['job.id']);
-            $payload = $emitter->call($job, 'payload');
-
             $emitter->emit([
                 ...$emitter->baseRecord('job.released', $connectionName, $jobContext['queue']),
                 'messaging.operation.name' => 'settle',
@@ -182,7 +177,7 @@ class CloudQueueEventEmitter
                 'laravel.queue.backoff_s' => $emitter->toFloat($backoff),
                 'laravel.queue.duration_s' => $emitter->durationSeconds($key),
                 'laravel.queue.result' => 'released',
-                ...$emitter->traceContextFromPayload(\is_array($payload) ? $payload : []),
+                ...$emitter->correlationRecord(),
             ]);
 
             $emitter->forgetDuration($key);
@@ -197,8 +192,6 @@ class CloudQueueEventEmitter
         static::forConnection($connectionName)?->safely(function ($emitter) use ($connectionName, $job, $exception) {
             $jobContext = $emitter->jobContext($job);
             $key = $emitter->processingKey($jobContext['job.uuid'], $jobContext['job.id']);
-            $payload = $emitter->call($job, 'payload');
-
             $emitter->emit([
                 ...$emitter->baseRecord('job.failed', $connectionName, $jobContext['queue']),
                 'messaging.operation.name' => 'settle',
@@ -207,7 +200,7 @@ class CloudQueueEventEmitter
                 'laravel.queue.result' => 'failed',
                 'error.type' => $exception ? $exception::class : null,
                 'error.message' => $emitter->truncateErrorMessage($exception?->getMessage()),
-                ...$emitter->traceContextFromPayload(\is_array($payload) ? $payload : []),
+                ...$emitter->correlationRecord(),
             ]);
 
             $emitter->forgetDuration($key);
@@ -222,15 +215,13 @@ class CloudQueueEventEmitter
         static::forConnection($connectionName)?->safely(function ($emitter) use ($connectionName, $job) {
             $jobContext = $emitter->jobContext($job);
             $key = $emitter->processingKey($jobContext['job.uuid'], $jobContext['job.id']);
-            $payload = $emitter->call($job, 'payload');
-
             $emitter->emit([
                 ...$emitter->baseRecord('job.timed_out', $connectionName, $jobContext['queue']),
                 'messaging.operation.name' => 'process',
                 ...$emitter->jobRecord($jobContext),
                 'laravel.queue.duration_s' => $emitter->durationSeconds($key),
                 'laravel.queue.result' => 'timed_out',
-                ...$emitter->traceContextFromPayload(\is_array($payload) ? $payload : []),
+                ...$emitter->correlationRecord(),
             ]);
 
             $emitter->forgetDuration($key);
@@ -322,40 +313,29 @@ class CloudQueueEventEmitter
     }
 
     /**
-     * Get trace context fields from a queue payload.
+     * Get correlation fields from hidden context.
      *
-     * @param  array<string, mixed>  $payload
      * @return array<string, string>
      */
-    protected function traceContextFromPayload(array $payload): array
+    protected function correlationRecord(): array
     {
-        $traceparent = $this->toString($payload['traceparent'] ?? null)
-            ?? $this->toString($payload['data']['traceparent'] ?? null);
+        $correlationId = $this->correlationId();
 
-        if ($traceparent === null) {
-            return [];
-        }
-
-        $matches = [];
-
-        if (! \preg_match('/^[0-9a-f]{2}-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/i', $traceparent, $matches)) {
-            return [];
-        }
-
-        $traceContext = [
-            'trace_id' => \strtolower($matches[1]),
-            'span_id' => \strtolower($matches[2]),
-            'trace_flags' => \strtolower($matches[3]),
+        return $correlationId === null ? [] : [
+            'correlation_id' => $correlationId,
         ];
+    }
 
-        $tracestate = $this->toString($payload['tracestate'] ?? null)
-            ?? $this->toString($payload['data']['tracestate'] ?? null);
-
-        if ($tracestate !== null) {
-            $traceContext['tracestate'] = $tracestate;
+    /**
+     * Get the current correlation ID from hidden context.
+     */
+    protected function correlationId(): ?string
+    {
+        try {
+            return $this->toString(Context::getHidden('laravel_cloud_request_id'));
+        } catch (\Throwable) {
+            return null;
         }
-
-        return $traceContext;
     }
 
     /**
