@@ -377,6 +377,15 @@ abstract class Queue
                     $this->raiseJobQueueingEvent($queue, $job, $payload, $delay);
 
                     return tap($callback($payload, $queue, $delay), function ($jobId) use ($queue, $job, $payload, $delay) {
+                        CloudQueueEventEmitter::queued(
+                            $this->connectionName,
+                            $queue,
+                            $jobId,
+                            $job,
+                            $payload,
+                            ! is_null($delay) ? $this->secondsUntil($delay) : null,
+                        );
+
                         $this->raiseJobQueuedEvent($queue, $jobId, $job, $payload, $delay);
                     });
                 }
@@ -386,6 +395,15 @@ abstract class Queue
         $this->raiseJobQueueingEvent($queue, $job, $payload, $delay);
 
         return tap($callback($payload, $queue, $delay), function ($jobId) use ($queue, $job, $payload, $delay) {
+            CloudQueueEventEmitter::queued(
+                $this->connectionName,
+                $queue,
+                $jobId,
+                $job,
+                $payload,
+                ! is_null($delay) ? $this->secondsUntil($delay) : null,
+            );
+
             $this->raiseJobQueuedEvent($queue, $jobId, $job, $payload, $delay);
         });
     }

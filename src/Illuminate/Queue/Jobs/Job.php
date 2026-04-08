@@ -5,6 +5,7 @@ namespace Illuminate\Queue\Jobs;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\BatchRepository;
 use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Queue\CloudQueueEventEmitter;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Queue\ManuallyFailedException;
 use Illuminate\Queue\TimeoutExceededException;
@@ -218,8 +219,12 @@ abstract class Job
 
             $this->failed($e);
         } finally {
+            $exception = $e ?: new ManuallyFailedException;
+
+            CloudQueueEventEmitter::failed($this->connectionName, $this, $exception);
+
             $this->resolve(Dispatcher::class)->dispatch(new JobFailed(
-                $this->connectionName, $this, $e ?: new ManuallyFailedException
+                $this->connectionName, $this, $exception
             ));
         }
     }

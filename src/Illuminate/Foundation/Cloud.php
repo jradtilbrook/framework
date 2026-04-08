@@ -5,7 +5,8 @@ namespace Illuminate\Foundation;
 use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Foundation\Bootstrap\LoadConfiguration;
-use Illuminate\Foundation\Queue\CloudQueueEventEmitter;
+use Illuminate\Queue\CloudQueueEventEmitter;
+use Illuminate\Queue\Queue;
 use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\SocketHandler;
 use PDO;
@@ -141,26 +142,48 @@ class Cloud
     }
 
     /**
-     * Configure cloud queue event emission if enabled.
+     * Configure cloud queue event emission.
      */
     public static function configureQueueEventEmission(Application $app): void
     {
-        if (! static::queueEventEmissionEnabled()) {
+        if (! laravel_cloud()) {
+            CloudQueueEventEmitter::disable();
+
             return;
         }
 
-        (new CloudQueueEventEmitter($app))->register($app['events']);
-    }
+        CloudQueueEventEmitter::configure(
+            $app,
+            $_ENV['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET']
+                ?? $_SERVER['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET']
+                ?? $_ENV['LARAVEL_CLOUD_LOG_SOCKET']
+                ?? $_SERVER['LARAVEL_CLOUD_LOG_SOCKET']
+                ?? null,
+        );
 
-    /**
-     * Determine if cloud queue event emission is enabled.
-     */
-    protected static function queueEventEmissionEnabled(): bool
-    {
-        $enabled = $_ENV['LARAVEL_CLOUD_QUEUE_EVENTS']
-            ?? $_SERVER['LARAVEL_CLOUD_QUEUE_EVENTS']
-            ?? '1';
+        Queue::createPayloadUsing(function ($connection, $queue, $payload) {
+            if (isset($payload['traceparent']) || isset($payload['data']['traceparent'])) {
+                return [];
+            }
 
-        return ! in_array(strtolower((string) $enabled), ['0', 'false', 'off'], true);
+            $traceparent = $_SERVER['HTTP_TRACEPARENT']
+                ?? $_ENV['TRACEPARENT']
+                ?? $_SERVER['TRACEPARENT']
+                ?? null;
+
+            if (! is_string($traceparent) || $traceparent === '') {
+                return [];
+            }
+
+            $tracestate = $_SERVER['HTTP_TRACESTATE']
+                ?? $_ENV['TRACESTATE']
+                ?? $_SERVER['TRACESTATE']
+                ?? null;
+
+            return array_filter([
+                'traceparent' => $traceparent,
+                'tracestate' => is_string($tracestate) && $tracestate !== '' ? $tracestate : null,
+            ]);
+        });
     }
 }

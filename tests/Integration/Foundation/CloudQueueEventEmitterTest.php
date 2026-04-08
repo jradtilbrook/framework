@@ -3,41 +3,38 @@
 namespace Illuminate\Tests\Integration\Foundation;
 
 use Illuminate\Foundation\Cloud;
-use Illuminate\Foundation\Queue\CloudQueueEventEmitter;
-use Illuminate\Queue\Events\JobFailed;
-use Illuminate\Queue\Events\JobProcessed;
-use Illuminate\Queue\Events\JobProcessing;
-use Illuminate\Queue\Events\JobQueued;
+use Illuminate\Queue\CloudQueueEventEmitter;
 use Orchestra\Testbench\TestCase;
 use RuntimeException;
 
 class CloudQueueEventEmitterTest extends TestCase
 {
-    protected $queueEventsEnabled;
+    protected $cloudEnabled;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->queueEventsEnabled = $_SERVER['LARAVEL_CLOUD_QUEUE_EVENTS'] ?? null;
+        $this->cloudEnabled = $_SERVER['LARAVEL_CLOUD'] ?? null;
     }
 
     protected function tearDown(): void
     {
-        if (is_null($this->queueEventsEnabled)) {
-            unset($_SERVER['LARAVEL_CLOUD_QUEUE_EVENTS']);
+        if (is_null($this->cloudEnabled)) {
+            unset($_SERVER['LARAVEL_CLOUD']);
         } else {
-            $_SERVER['LARAVEL_CLOUD_QUEUE_EVENTS'] = $this->queueEventsEnabled;
+            $_SERVER['LARAVEL_CLOUD'] = $this->cloudEnabled;
         }
 
         CloudQueueEventEmitter::writeUsing(null);
+        CloudQueueEventEmitter::disable();
 
         parent::tearDown();
     }
 
     public function test_it_emits_queued_processing_and_processed_events()
     {
-        $_SERVER['LARAVEL_CLOUD_QUEUE_EVENTS'] = '1';
+        $_SERVER['LARAVEL_CLOUD'] = '1';
 
         $this->app['config']->set('app.name', 'framework-test');
         $this->app['config']->set('app.env', 'testing');
@@ -53,7 +50,7 @@ class CloudQueueEventEmitterTest extends TestCase
 
         $createdAt = time() - 1;
 
-        $this->app['events']->dispatch(new JobQueued(
+        CloudQueueEventEmitter::queued(
             'redis',
             'default',
             '42',
@@ -62,9 +59,10 @@ class CloudQueueEventEmitterTest extends TestCase
                 'uuid' => 'job-1',
                 'displayName' => 'App\\Jobs\\ShipOrder',
                 'createdAt' => $createdAt,
+                'traceparent' => '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
             ]),
             5,
-        ));
+        );
 
         $job = new CloudQueueEventEmitterFakeJob(
             id: '42',
@@ -73,13 +71,14 @@ class CloudQueueEventEmitterTest extends TestCase
             queue: 'default',
             attempts: 2,
             createdAt: $createdAt,
+            traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
         );
 
-        $this->app['events']->dispatch(new JobProcessing('redis', $job));
+        CloudQueueEventEmitter::processing('redis', $job);
 
         usleep(1000);
 
-        $this->app['events']->dispatch(new JobProcessed('redis', $job));
+        CloudQueueEventEmitter::processed('redis', $job);
 
         $this->assertCount(3, $records);
 
@@ -98,6 +97,9 @@ class CloudQueueEventEmitterTest extends TestCase
         $this->assertSame('App\\Jobs\\ShipOrder', $queued['job.name']);
         $this->assertSame(5, $queued['laravel.queue.delay_s']);
         $this->assertSame($createdAt, $queued['laravel.queue.created_at_unix']);
+        $this->assertSame('4bf92f3577b34da6a3ce929d0e0e4736', $queued['trace_id']);
+        $this->assertSame('00f067aa0ba902b7', $queued['span_id']);
+        $this->assertSame('01', $queued['trace_flags']);
         $this->assertArrayHasKey('service.name', $queued);
         $this->assertArrayHasKey('deployment.environment.name', $queued);
 
@@ -110,11 +112,12 @@ class CloudQueueEventEmitterTest extends TestCase
         $this->assertSame('process', $processed['messaging.operation.name']);
         $this->assertSame('processed', $processed['laravel.queue.result']);
         $this->assertIsInt($processed['laravel.queue.duration_ms']);
+        $this->assertSame('4bf92f3577b34da6a3ce929d0e0e4736', $processed['trace_id']);
     }
 
     public function test_it_emits_failed_event_with_a_truncated_error_message()
     {
-        $_SERVER['LARAVEL_CLOUD_QUEUE_EVENTS'] = '1';
+        $_SERVER['LARAVEL_CLOUD'] = '1';
 
         $records = [];
 
@@ -133,11 +136,7 @@ class CloudQueueEventEmitterTest extends TestCase
             createdAt: time() - 1,
         );
 
-        $this->app['events']->dispatch(new JobFailed(
-            'redis',
-            $job,
-            new RuntimeException(str_repeat('x', 600)),
-        ));
+        CloudQueueEventEmitter::failed('redis', $job, new RuntimeException(str_repeat('x', 600)));
 
         $this->assertCount(1, $records);
 
@@ -153,7 +152,7 @@ class CloudQueueEventEmitterTest extends TestCase
 
     public function test_it_does_not_emit_queue_events_when_disabled()
     {
-        $_SERVER['LARAVEL_CLOUD_QUEUE_EVENTS'] = '0';
+        $_SERVER['LARAVEL_CLOUD'] = '0';
 
         $records = [];
 
@@ -163,14 +162,39 @@ class CloudQueueEventEmitterTest extends TestCase
 
         Cloud::configureQueueEventEmission($this->app);
 
-        $this->app['events']->dispatch(new JobQueued(
+        CloudQueueEventEmitter::queued(
             'redis',
             'default',
             '42',
             'App\\Jobs\\ShipOrder',
             json_encode(['uuid' => 'job-3', 'displayName' => 'App\\Jobs\\ShipOrder']),
             0,
-        ));
+        );
+
+        $this->assertCount(0, $records);
+    }
+
+    public function test_it_does_not_emit_sync_jobs()
+    {
+        $_SERVER['LARAVEL_CLOUD'] = '1';
+        $this->app['config']->set('queue.connections.sync.driver', 'sync');
+
+        $records = [];
+
+        CloudQueueEventEmitter::writeUsing(function ($payload) use (&$records) {
+            $records[] = json_decode($payload, true);
+        });
+
+        Cloud::configureQueueEventEmission($this->app);
+
+        CloudQueueEventEmitter::queued(
+            'sync',
+            'default',
+            '99',
+            'App\\Jobs\\ShipOrder',
+            json_encode(['uuid' => 'job-sync', 'displayName' => 'App\\Jobs\\ShipOrder']),
+            0,
+        );
 
         $this->assertCount(0, $records);
     }
@@ -185,6 +209,7 @@ class CloudQueueEventEmitterFakeJob
         public string $queue,
         public int $attempts,
         public int $createdAt,
+        public ?string $traceparent = null,
         public bool $deleted = false,
     ) {
     }
@@ -216,9 +241,10 @@ class CloudQueueEventEmitterFakeJob
 
     public function payload(): array
     {
-        return [
+        return array_filter([
             'createdAt' => $this->createdAt,
-        ];
+            'traceparent' => $this->traceparent,
+        ]);
     }
 
     public function isDeleted(): bool
