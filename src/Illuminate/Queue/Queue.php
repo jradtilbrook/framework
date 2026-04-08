@@ -131,12 +131,46 @@ abstract class Queue
             ? $this->secondsUntil($delay)
             : null;
 
+        $value = $this->addTraceContextToPayload($value);
+
         $payload = json_encode($value, \JSON_UNESCAPED_UNICODE);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
             throw new InvalidPayloadException(
                 'Unable to JSON encode payload. Error ('.json_last_error().'): '.json_last_error_msg(), $value
             );
+        }
+
+        return $payload;
+    }
+
+    /**
+     * Add trace context values to the payload.
+     */
+    protected function addTraceContextToPayload(array $payload): array
+    {
+        if (isset($payload['traceparent']) || isset($payload['data']['traceparent'])) {
+            return $payload;
+        }
+
+        $traceparent = $_SERVER['HTTP_TRACEPARENT']
+            ?? $_ENV['TRACEPARENT']
+            ?? $_SERVER['TRACEPARENT']
+            ?? null;
+
+        if (! is_string($traceparent) || $traceparent === '') {
+            return $payload;
+        }
+
+        $payload['traceparent'] = $traceparent;
+
+        $tracestate = $_SERVER['HTTP_TRACESTATE']
+            ?? $_ENV['TRACESTATE']
+            ?? $_SERVER['TRACESTATE']
+            ?? null;
+
+        if (is_string($tracestate) && $tracestate !== '') {
+            $payload['tracestate'] = $tracestate;
         }
 
         return $payload;

@@ -6,7 +6,6 @@ use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Foundation\Bootstrap\LoadConfiguration;
 use Illuminate\Queue\CloudQueueEventEmitter;
-use Illuminate\Queue\Queue;
 use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\SocketHandler;
 use PDO;
@@ -154,30 +153,5 @@ class Cloud
                 ?? $_SERVER['LARAVEL_CLOUD_LOG_SOCKET']
                 ?? null,
         );
-
-        Queue::createPayloadUsing(function ($connection, $queue, $payload) {
-            if (isset($payload['traceparent']) || isset($payload['data']['traceparent'])) {
-                return [];
-            }
-
-            $traceparent = $_SERVER['HTTP_TRACEPARENT']
-                ?? $_ENV['TRACEPARENT']
-                ?? $_SERVER['TRACEPARENT']
-                ?? null;
-
-            if (! is_string($traceparent) || $traceparent === '') {
-                return [];
-            }
-
-            $tracestate = $_SERVER['HTTP_TRACESTATE']
-                ?? $_ENV['TRACESTATE']
-                ?? $_SERVER['TRACESTATE']
-                ?? null;
-
-            return array_filter([
-                'traceparent' => $traceparent,
-                'tracestate' => is_string($tracestate) && $tracestate !== '' ? $tracestate : null,
-            ]);
-        });
     }
 }
