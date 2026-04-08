@@ -417,7 +417,7 @@ abstract class Queue
                             $jobId,
                             $job,
                             $payload,
-                            ! is_null($delay) ? $this->secondsUntil($delay) : null,
+                            $delay,
                         );
 
                         $this->raiseJobQueuedEvent($queue, $jobId, $job, $payload, $delay);
@@ -435,7 +435,7 @@ abstract class Queue
                 $jobId,
                 $job,
                 $payload,
-                ! is_null($delay) ? $this->secondsUntil($delay) : null,
+                $delay,
             );
 
             $this->raiseJobQueuedEvent($queue, $jobId, $job, $payload, $delay);

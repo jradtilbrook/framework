@@ -93,7 +93,7 @@ class CloudQueueEventEmitter
      *
      * @param  string|int|null  $jobId
      * @param  \Closure|string|object  $job
-     * @param  int|null  $delay
+     * @param  mixed  $delay
      */
     public static function queued(?string $connectionName, ?string $queue, $jobId, $job, string $payload, $delay): void
     {
@@ -107,7 +107,7 @@ class CloudQueueEventEmitter
                 'job.id' => $emitter->toIdentifier($jobId),
                 'job.name' => $emitter->jobName($decodedPayload['displayName'] ?? $job),
                 'laravel.queue.attempt' => $emitter->toInteger($decodedPayload['attempts'] ?? null),
-                'laravel.queue.delay_s' => $emitter->toInteger($delay),
+                'laravel.queue.delay_s' => $emitter->toFloat($decodedPayload['delay'] ?? $delay),
                 'laravel.queue.created_at_unix' => $emitter->toInteger($decodedPayload['createdAt'] ?? null),
                 ...$emitter->traceContextFromPayload($decodedPayload),
             ]);
@@ -133,7 +133,7 @@ class CloudQueueEventEmitter
                 ...$emitter->baseRecord('job.processing', $connectionName, $jobContext['queue']),
                 'messaging.operation.name' => 'process',
                 ...$emitter->jobRecord($jobContext),
-                'laravel.queue.wait_ms' => $emitter->waitMilliseconds($job),
+                'laravel.queue.wait_s' => $emitter->waitSeconds($job),
                 ...$emitter->traceContextFromPayload(\is_array($payload) ? $payload : []),
             ]);
         });
@@ -153,8 +153,8 @@ class CloudQueueEventEmitter
                 ...$emitter->baseRecord('job.processed', $connectionName, $jobContext['queue']),
                 'messaging.operation.name' => 'process',
                 ...$emitter->jobRecord($jobContext),
-                'laravel.queue.wait_ms' => $emitter->waitMilliseconds($job),
-                'laravel.queue.duration_ms' => $emitter->durationMilliseconds($key),
+                'laravel.queue.wait_s' => $emitter->waitSeconds($job),
+                'laravel.queue.duration_s' => $emitter->durationSeconds($key),
                 'laravel.queue.result' => $emitter->call($job, 'isDeleted') ? 'deleted' : 'processed',
                 ...$emitter->traceContextFromPayload(\is_array($payload) ? $payload : []),
             ]);
@@ -179,8 +179,8 @@ class CloudQueueEventEmitter
                 ...$emitter->baseRecord('job.released', $connectionName, $jobContext['queue']),
                 'messaging.operation.name' => 'settle',
                 ...$emitter->jobRecord($jobContext),
-                'laravel.queue.backoff_s' => $emitter->toInteger($backoff),
-                'laravel.queue.duration_ms' => $emitter->durationMilliseconds($key),
+                'laravel.queue.backoff_s' => $emitter->toFloat($backoff),
+                'laravel.queue.duration_s' => $emitter->durationSeconds($key),
                 'laravel.queue.result' => 'released',
                 ...$emitter->traceContextFromPayload(\is_array($payload) ? $payload : []),
             ]);
@@ -203,7 +203,7 @@ class CloudQueueEventEmitter
                 ...$emitter->baseRecord('job.failed', $connectionName, $jobContext['queue']),
                 'messaging.operation.name' => 'settle',
                 ...$emitter->jobRecord($jobContext),
-                'laravel.queue.duration_ms' => $emitter->durationMilliseconds($key),
+                'laravel.queue.duration_s' => $emitter->durationSeconds($key),
                 'laravel.queue.result' => 'failed',
                 'error.type' => $exception ? $exception::class : null,
                 'error.message' => $emitter->truncateErrorMessage($exception?->getMessage()),
@@ -228,7 +228,7 @@ class CloudQueueEventEmitter
                 ...$emitter->baseRecord('job.timed_out', $connectionName, $jobContext['queue']),
                 'messaging.operation.name' => 'process',
                 ...$emitter->jobRecord($jobContext),
-                'laravel.queue.duration_ms' => $emitter->durationMilliseconds($key),
+                'laravel.queue.duration_s' => $emitter->durationSeconds($key),
                 'laravel.queue.result' => 'timed_out',
                 ...$emitter->traceContextFromPayload(\is_array($payload) ? $payload : []),
             ]);
@@ -384,7 +384,7 @@ class CloudQueueEventEmitter
      */
     protected function emit(array $record): void
     {
-        $payload = \json_encode($record, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        $payload = \json_encode($record, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_PRESERVE_ZERO_FRACTION);
 
         if ($payload === false) {
             return;
@@ -496,9 +496,9 @@ class CloudQueueEventEmitter
     }
 
     /**
-     * Get the queue wait time in milliseconds.
+     * Get the queue wait time in seconds.
      */
-    protected function waitMilliseconds($job): ?int
+    protected function waitSeconds($job): ?float
     {
         $payload = $this->call($job, 'payload');
 
@@ -512,19 +512,19 @@ class CloudQueueEventEmitter
             return null;
         }
 
-        return \max((int) \round((\microtime(true) - $createdAt) * 1000), 0);
+        return \max(\microtime(true) - $createdAt, 0.0);
     }
 
     /**
-     * Get the queue duration in milliseconds.
+     * Get the queue duration in seconds.
      */
-    protected function durationMilliseconds(?string $key): ?int
+    protected function durationSeconds(?string $key): ?float
     {
         if ($key === null || ! isset($this->processingStartedAt[$key])) {
             return null;
         }
 
-        return \max((int) \round((\microtime(true) - $this->processingStartedAt[$key]) * 1000), 0);
+        return \max(\microtime(true) - $this->processingStartedAt[$key], 0.0);
     }
 
     /**
@@ -597,6 +597,18 @@ class CloudQueueEventEmitter
         }
 
         return (int) $value;
+    }
+
+    /**
+     * Convert a value to a float.
+     */
+    protected function toFloat($value): ?float
+    {
+        if (! \is_numeric($value)) {
+            return null;
+        }
+
+        return (float) $value;
     }
 
     /**

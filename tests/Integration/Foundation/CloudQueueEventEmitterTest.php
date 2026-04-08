@@ -78,7 +78,7 @@ class CloudQueueEventEmitterTest extends TestCase
         $this->assertSame('job-1', $queued['job.uuid']);
         $this->assertSame('42', $queued['job.id']);
         $this->assertSame('App\\Jobs\\ShipOrder', $queued['job.name']);
-        $this->assertSame(5, $queued['laravel.queue.delay_s']);
+        $this->assertSame(5.0, $queued['laravel.queue.delay_s']);
         $this->assertSame($createdAt, $queued['laravel.queue.created_at_unix']);
         $this->assertSame('4bf92f3577b34da6a3ce929d0e0e4736', $queued['trace_id']);
         $this->assertSame('00f067aa0ba902b7', $queued['span_id']);
@@ -89,12 +89,12 @@ class CloudQueueEventEmitterTest extends TestCase
         $this->assertSame('job.processing', $processing['event_name']);
         $this->assertSame('process', $processing['messaging.operation.name']);
         $this->assertSame(2, $processing['laravel.queue.attempt']);
-        $this->assertIsInt($processing['laravel.queue.wait_ms']);
+        $this->assertIsFloat($processing['laravel.queue.wait_s']);
 
         $this->assertSame('job.processed', $processed['event_name']);
         $this->assertSame('process', $processed['messaging.operation.name']);
         $this->assertSame('processed', $processed['laravel.queue.result']);
-        $this->assertIsInt($processed['laravel.queue.duration_ms']);
+        $this->assertIsFloat($processed['laravel.queue.duration_s']);
         $this->assertSame('4bf92f3577b34da6a3ce929d0e0e4736', $processed['trace_id']);
     }
 
