@@ -242,10 +242,6 @@ class CloudQueueEventEmitter
      */
     protected static function forConnection(?string $connectionName): ?self
     {
-        if (! \laravel_cloud()) {
-            return null;
-        }
-
         if (! static::$instance instanceof self) {
             return null;
         }

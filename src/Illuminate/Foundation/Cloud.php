@@ -146,12 +146,6 @@ class Cloud
      */
     public static function configureQueueEventEmission(Application $app): void
     {
-        if (! laravel_cloud()) {
-            CloudQueueEventEmitter::disable();
-
-            return;
-        }
-
         CloudQueueEventEmitter::configure(
             $app,
             $_ENV['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET']

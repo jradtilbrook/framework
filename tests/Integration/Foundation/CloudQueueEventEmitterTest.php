@@ -9,23 +9,8 @@ use RuntimeException;
 
 class CloudQueueEventEmitterTest extends TestCase
 {
-    protected $cloudEnabled;
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        $this->cloudEnabled = $_SERVER['LARAVEL_CLOUD'] ?? null;
-    }
-
     protected function tearDown(): void
     {
-        if (is_null($this->cloudEnabled)) {
-            unset($_SERVER['LARAVEL_CLOUD']);
-        } else {
-            $_SERVER['LARAVEL_CLOUD'] = $this->cloudEnabled;
-        }
-
         CloudQueueEventEmitter::writeUsing(null);
         CloudQueueEventEmitter::disable();
 
@@ -34,8 +19,6 @@ class CloudQueueEventEmitterTest extends TestCase
 
     public function test_it_emits_queued_processing_and_processed_events()
     {
-        $_SERVER['LARAVEL_CLOUD'] = '1';
-
         $this->app['config']->set('app.name', 'framework-test');
         $this->app['config']->set('app.env', 'testing');
         $this->app['config']->set('queue.connections.redis.driver', 'redis');
@@ -117,8 +100,6 @@ class CloudQueueEventEmitterTest extends TestCase
 
     public function test_it_emits_failed_event_with_a_truncated_error_message()
     {
-        $_SERVER['LARAVEL_CLOUD'] = '1';
-
         $records = [];
 
         CloudQueueEventEmitter::writeUsing(function ($payload) use (&$records) {
@@ -150,10 +131,8 @@ class CloudQueueEventEmitterTest extends TestCase
         $this->assertArrayNotHasKey('payload', $failed);
     }
 
-    public function test_it_does_not_emit_queue_events_when_disabled()
+    public function test_it_does_not_emit_queue_events_when_emitter_is_disabled()
     {
-        $_SERVER['LARAVEL_CLOUD'] = '0';
-
         $records = [];
 
         CloudQueueEventEmitter::writeUsing(function ($payload) use (&$records) {
@@ -161,6 +140,7 @@ class CloudQueueEventEmitterTest extends TestCase
         });
 
         Cloud::configureQueueEventEmission($this->app);
+        CloudQueueEventEmitter::disable();
 
         CloudQueueEventEmitter::queued(
             'redis',
@@ -176,7 +156,6 @@ class CloudQueueEventEmitterTest extends TestCase
 
     public function test_it_does_not_emit_sync_jobs()
     {
-        $_SERVER['LARAVEL_CLOUD'] = '1';
         $this->app['config']->set('queue.connections.sync.driver', 'sync');
 
         $records = [];
