@@ -149,8 +149,6 @@ class Cloud
             $app,
             $_ENV['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET']
                 ?? $_SERVER['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET']
-                ?? $_ENV['LARAVEL_CLOUD_LOG_SOCKET']
-                ?? $_SERVER['LARAVEL_CLOUD_LOG_SOCKET']
                 ?? null,
         );
     }
