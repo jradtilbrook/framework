@@ -9,17 +9,9 @@ use Illuminate\Queue\Queue;
 use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\ServiceProvider;
-use Ramsey\Uuid\Uuid as BaseUuid;
 
 class ContextServiceProvider extends ServiceProvider
 {
-    /**
-     * The namespace used for deterministic cloud trace IDs.
-     *
-     * @var string
-     */
-    protected const TRACE_SEED_NAMESPACE = 'd7b1993d-1268-4f10-88e1-6fab60dbc51b';
-
     /**
      * Register the service provider.
      *
@@ -39,7 +31,9 @@ class ContextServiceProvider extends ServiceProvider
             });
         }
 
-        $this->app->resolving(Repository::class, fn (Repository $repository) => $this->seedCloudTraceIdFromCfRay($repository));
+        if (laravel_cloud()) {
+            $this->app->resolving(Repository::class, fn (Repository $repository) => $this->addCloudRequestIdToContext($repository));
+        }
 
         $this->app->bind(ContextLogProcessorContract::class, fn () => new ContextLogProcessor());
     }
@@ -68,31 +62,46 @@ class ContextServiceProvider extends ServiceProvider
     }
 
     /**
-     * Seed cloud trace context values when running on Laravel Cloud.
+     * Add cloud request ID from incoming headers.
      */
-    protected function seedCloudTraceIdFromCfRay(Repository $repository): void
+    protected function addCloudRequestIdToContext(Repository $repository): void
     {
-        if (! laravel_cloud() || $repository->hasHidden('laravel_cloud_trace_id')) {
+        if ($repository->hasHidden('laravel_cloud_request_id')) {
             return;
         }
 
-        $cfRay = null;
+        $header = Env::get('LARAVEL_CLOUD_REQUEST_ID_HEADER', 'X-Request-ID');
 
+        if (! is_string($header) || $header === '') {
+            return;
+        }
+
+        $requestId = $this->requestHeader($header);
+
+        if (! is_string($requestId) || $requestId === '') {
+            return;
+        }
+
+        $repository->addHidden('laravel_cloud_request_id', $requestId);
+    }
+
+    /**
+     * Resolve a request header value.
+     */
+    protected function requestHeader(string $name): ?string
+    {
         if ($this->app->bound('request') && $this->app['request'] instanceof Request) {
-            $cfRay = $this->app['request']->header('CF-Ray');
+            $value = $this->app['request']->header($name);
+
+            if (is_string($value) && $value !== '') {
+                return $value;
+            }
         }
 
-        if (! is_string($cfRay) || $cfRay === '') {
-            $cfRay = $_SERVER['HTTP_CF_RAY'] ?? null;
-        }
+        $key = 'HTTP_'.strtoupper(str_replace('-', '_', $name));
 
-        if (! is_string($cfRay) || $cfRay === '') {
-            return;
-        }
+        $value = $_SERVER[$key] ?? null;
 
-        $repository->addHidden(
-            'laravel_cloud_trace_id',
-            str_replace('-', '', BaseUuid::uuid5(static::TRACE_SEED_NAMESPACE, $cfRay)->toString())
-        );
+        return is_string($value) && $value !== '' ? $value : null;
     }
 }
