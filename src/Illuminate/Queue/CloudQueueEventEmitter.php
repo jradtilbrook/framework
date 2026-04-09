@@ -162,26 +162,6 @@ class CloudQueueEventEmitter
     }
 
     /**
-     * Emit a job timed out event and stop duration timing.
-     */
-    public static function timedOut(): void
-    {
-        if (! static::$enabled) {
-            return;
-        }
-
-        $duration = static::durationSeconds();
-
-        static::emit([
-            'type' => 'job.timed_out',
-            'timestamp' => static::timestamp(),
-            'duration' => $duration,
-        ]);
-
-        static::forgetDuration();
-    }
-
-    /**
      * Get the current timestamp in seconds.
      */
     protected static function timestamp(): float
