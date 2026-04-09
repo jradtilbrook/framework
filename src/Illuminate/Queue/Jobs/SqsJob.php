@@ -57,7 +57,9 @@ class SqsJob extends Job implements JobContract
             'VisibilityTimeout' => $delay,
         ]);
 
-        CloudQueueEventEmitter::released($this->connectionName, $delay);
+        if (laravel_cloud()) {
+            CloudQueueEventEmitter::released($this->connectionName, $delay);
+        }
     }
 
     /**
@@ -134,14 +136,20 @@ class SqsJob extends Job implements JobContract
         $payload = $this->payload();
         $wait = isset($payload['createdAt']) ? \max(\microtime(true) - $payload['createdAt'], 0.0) : 0.0;
 
-        CloudQueueEventEmitter::processing($this->connectionName, $wait);
+        if (laravel_cloud()) {
+            CloudQueueEventEmitter::processing($this->connectionName, $wait);
+        }
 
         try {
             parent::fire();
 
-            CloudQueueEventEmitter::processed($this->connectionName);
+            if (laravel_cloud()) {
+                CloudQueueEventEmitter::processed($this->connectionName);
+            }
         } catch (Throwable $e) {
-            CloudQueueEventEmitter::failed($this->connectionName);
+            if (laravel_cloud()) {
+                CloudQueueEventEmitter::failed($this->connectionName);
+            }
 
             throw $e;
         }
@@ -155,7 +163,9 @@ class SqsJob extends Job implements JobContract
      */
     public function fail($e = null)
     {
-        CloudQueueEventEmitter::failed($this->connectionName);
+        if (laravel_cloud()) {
+            CloudQueueEventEmitter::failed($this->connectionName);
+        }
 
         parent::fail($e);
     }
