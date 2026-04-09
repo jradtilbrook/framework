@@ -69,9 +69,9 @@ class CloudQueueEventEmitter
     /**
      * Emit a queued job event.
      */
-    public static function queued(?string $connectionName, float $delay): void
+    public static function queued(float $delay): void
     {
-        if (! static::shouldEmit($connectionName)) {
+        if (! static::$enabled) {
             return;
         }
 
@@ -85,15 +85,13 @@ class CloudQueueEventEmitter
     /**
      * Emit a job processing event and begin duration timing.
      */
-    public static function processing(?string $connectionName, float $wait): void
+    public static function processing(float $wait): void
     {
-        if (! static::shouldEmit($connectionName)) {
+        if (! static::$enabled) {
             return;
         }
 
-        $key = $connectionName;
-
-        static::$processingStartedAt[$key] = microtime(true);
+        static::$processingStartedAt['sqs'] = microtime(true);
 
         static::emit([
             'type' => 'job.processing',
@@ -105,14 +103,13 @@ class CloudQueueEventEmitter
     /**
      * Emit a job processed event and stop duration timing.
      */
-    public static function processed(?string $connectionName): void
+    public static function processed(): void
     {
-        if (! static::shouldEmit($connectionName)) {
+        if (! static::$enabled) {
             return;
         }
 
-        $key = $connectionName;
-        $duration = static::durationSeconds($key);
+        $duration = static::durationSeconds();
 
         static::emit([
             'type' => 'job.processed',
@@ -120,20 +117,19 @@ class CloudQueueEventEmitter
             'duration' => $duration,
         ]);
 
-        static::forgetDuration($key);
+        static::forgetDuration();
     }
 
     /**
      * Emit a job released event and stop duration timing.
      */
-    public static function released(?string $connectionName, int $backoff): void
+    public static function released(int $backoff): void
     {
-        if (! static::shouldEmit($connectionName)) {
+        if (! static::$enabled) {
             return;
         }
 
-        $key = $connectionName;
-        $duration = static::durationSeconds($key);
+        $duration = static::durationSeconds();
 
         static::emit([
             'type' => 'job.released',
@@ -142,20 +138,19 @@ class CloudQueueEventEmitter
             'duration' => $duration,
         ]);
 
-        static::forgetDuration($key);
+        static::forgetDuration();
     }
 
     /**
      * Emit a job failed event and stop duration timing.
      */
-    public static function failed(?string $connectionName): void
+    public static function failed(): void
     {
-        if (! static::shouldEmit($connectionName)) {
+        if (! static::$enabled) {
             return;
         }
 
-        $key = $connectionName;
-        $duration = static::durationSeconds($key);
+        $duration = static::durationSeconds();
 
         static::emit([
             'type' => 'job.failed',
@@ -163,20 +158,19 @@ class CloudQueueEventEmitter
             'duration' => $duration,
         ]);
 
-        static::forgetDuration($key);
+        static::forgetDuration();
     }
 
     /**
      * Emit a job timed out event and stop duration timing.
      */
-    public static function timedOut(?string $connectionName): void
+    public static function timedOut(): void
     {
-        if (! static::shouldEmit($connectionName)) {
+        if (! static::$enabled) {
             return;
         }
 
-        $key = $connectionName;
-        $duration = static::durationSeconds($key);
+        $duration = static::durationSeconds();
 
         static::emit([
             'type' => 'job.timed_out',
@@ -184,24 +178,7 @@ class CloudQueueEventEmitter
             'duration' => $duration,
         ]);
 
-        static::forgetDuration($key);
-    }
-
-    /**
-     * Determine if events should be emitted for the connection.
-     */
-    protected static function shouldEmit(?string $connectionName): bool
-    {
-        if (! static::$enabled) {
-            return false;
-        }
-
-        if ($connectionName === null) {
-            return false;
-        }
-
-        // Only emit for SQS driver
-        return $connectionName === 'sqs' || str_starts_with($connectionName, 'sqs');
+        static::forgetDuration();
     }
 
     /**
@@ -215,21 +192,21 @@ class CloudQueueEventEmitter
     /**
      * Get the queue duration in seconds.
      */
-    protected static function durationSeconds(string $key): ?float
+    protected static function durationSeconds(): ?float
     {
-        if (! isset(static::$processingStartedAt[$key])) {
+        if (! isset(static::$processingStartedAt['sqs'])) {
             return null;
         }
 
-        return max(microtime(true) - static::$processingStartedAt[$key], 0.0);
+        return max(microtime(true) - static::$processingStartedAt['sqs'], 0.0);
     }
 
     /**
      * Forget a queue duration start time.
      */
-    protected static function forgetDuration(string $key): void
+    protected static function forgetDuration(): void
     {
-        unset(static::$processingStartedAt[$key]);
+        unset(static::$processingStartedAt['sqs']);
     }
 
     /**

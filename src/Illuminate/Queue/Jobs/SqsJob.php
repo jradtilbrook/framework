@@ -58,7 +58,7 @@ class SqsJob extends Job implements JobContract
         ]);
 
         if (laravel_cloud()) {
-            CloudQueueEventEmitter::released($this->connectionName, $delay);
+            CloudQueueEventEmitter::released($delay);
         }
     }
 
@@ -137,18 +137,18 @@ class SqsJob extends Job implements JobContract
         $wait = isset($payload['createdAt']) ? microtime(true) - $payload['createdAt'] : 0.0;
 
         if (laravel_cloud()) {
-            CloudQueueEventEmitter::processing($this->connectionName, $wait);
+            CloudQueueEventEmitter::processing($wait);
         }
 
         try {
             parent::fire();
 
             if (laravel_cloud()) {
-                CloudQueueEventEmitter::processed($this->connectionName);
+                CloudQueueEventEmitter::processed();
             }
         } catch (Throwable $e) {
             if (laravel_cloud()) {
-                CloudQueueEventEmitter::failed($this->connectionName);
+                CloudQueueEventEmitter::failed();
             }
 
             throw $e;
@@ -164,7 +164,7 @@ class SqsJob extends Job implements JobContract
     public function fail($e = null)
     {
         if (laravel_cloud()) {
-            CloudQueueEventEmitter::failed($this->connectionName);
+            CloudQueueEventEmitter::failed();
         }
 
         parent::fail($e);
