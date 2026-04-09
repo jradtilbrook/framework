@@ -2,31 +2,28 @@
 
 namespace Illuminate\Queue;
 
-use Illuminate\Contracts\Container\Container;
-use Illuminate\Support\Facades\Context;
-
 class CloudQueueEventEmitter
 {
     /**
-     * The queue event schema version.
+     * The processing start times keyed by job identifier.
      *
-     * @var string
+     * @var array<string, float>
      */
-    protected const SCHEMA_VERSION = '1.0';
+    protected static $processingStartedAt = [];
 
     /**
-     * The queue event marker.
+     * The socket stream resource.
      *
-     * @var string
+     * @var resource|null
      */
-    protected const KIND = 'laravel.queue.event';
+    protected static $socket;
 
     /**
-     * The maximum error message length.
+     * The configured socket connection string.
      *
-     * @var int
+     * @var string|null
      */
-    protected const ERROR_MESSAGE_LIMIT = 500;
+    protected static $socketConnection;
 
     /**
      * The callback used to write the event payload.
@@ -36,41 +33,19 @@ class CloudQueueEventEmitter
     protected static $writeUsing;
 
     /**
-     * The configured emitter instance.
+     * Whether the emitter is enabled.
      *
-     * @var static|null
+     * @var bool
      */
-    protected static $instance;
-
-    /**
-     * The processing start times keyed by job identifier.
-     *
-     * @var array<string, float>
-     */
-    protected $processingStartedAt = [];
-
-    /**
-     * The socket stream resource.
-     *
-     * @var resource|null
-     */
-    protected $socket;
-
-    /**
-     * Create a new queue event emitter instance.
-     */
-    public function __construct(
-        protected Container $app,
-        protected ?string $socketConnection = null,
-    ) {
-    }
+    protected static $enabled = false;
 
     /**
      * Configure the cloud queue event emitter.
      */
-    public static function configure(Container $app, ?string $socketConnection = null): void
+    public static function configure(?string $socketConnection = null): void
     {
-        static::$instance = new static($app, $socketConnection);
+        static::$enabled = true;
+        static::$socketConnection = $socketConnection;
     }
 
     /**
@@ -78,7 +53,9 @@ class CloudQueueEventEmitter
      */
     public static function disable(): void
     {
-        static::$instance = null;
+        static::$enabled = false;
+        static::$socketConnection = null;
+        static::$socket = null;
     }
 
     /**
@@ -91,280 +68,176 @@ class CloudQueueEventEmitter
 
     /**
      * Emit a queued job event.
-     *
-     * @param  string|int|null  $jobId
-     * @param  \Closure|string|object  $job
-     * @param  mixed  $delay
      */
-    public static function queued(?string $connectionName, ?string $queue, $jobId, $job, string $payload, $delay): void
+    public static function queued(?string $connectionName, float $delay): void
     {
-        static::forConnection($connectionName)?->safely(function ($emitter) use ($connectionName, $queue, $jobId, $job, $payload, $delay) {
-            $decodedPayload = $emitter->decodePayload($payload);
+        if (! static::shouldEmit($connectionName)) {
+            return;
+        }
 
-            $emitter->emit([
-                ...$emitter->baseRecord('job.queued', $connectionName, $queue),
-                'messaging.operation.name' => 'send',
-                'job.uuid' => $emitter->toString($decodedPayload['uuid'] ?? null),
-                'job.id' => $emitter->toIdentifier($jobId),
-                'job.name' => $emitter->jobName($decodedPayload['displayName'] ?? $job),
-                'laravel.queue.attempt' => $emitter->toInteger($decodedPayload['attempts'] ?? null),
-                'laravel.queue.delay_s' => $emitter->toFloat($decodedPayload['delay'] ?? $delay),
-                'laravel.queue.created_at_unix' => $emitter->toInteger($decodedPayload['createdAt'] ?? null),
-                ...$emitter->correlationRecord(),
-            ]);
-        });
+        static::emit([
+            'event' => 'queued',
+            'ts' => static::timestamp(),
+            'delay' => $delay,
+        ]);
     }
 
     /**
      * Emit a job processing event and begin duration timing.
      */
-    public static function processing(?string $connectionName, $job): void
+    public static function processing(?string $connectionName, float $wait): void
     {
-        static::forConnection($connectionName)?->safely(function ($emitter) use ($connectionName, $job) {
-            $jobContext = $emitter->jobContext($job);
-            $key = $emitter->processingKey($jobContext['job.uuid'], $jobContext['job.id']);
+        if (! static::shouldEmit($connectionName)) {
+            return;
+        }
 
-            if ($key !== null) {
-                $emitter->processingStartedAt[$key] = \microtime(true);
-            }
+        $key = $connectionName;
 
-            $emitter->emit([
-                ...$emitter->baseRecord('job.processing', $connectionName, $jobContext['queue']),
-                'messaging.operation.name' => 'process',
-                ...$emitter->jobRecord($jobContext),
-                'laravel.queue.wait_s' => $emitter->waitSeconds($job),
-                ...$emitter->correlationRecord(),
-            ]);
-        });
+        static::$processingStartedAt[$key] = \microtime(true);
+
+        static::emit([
+            'event' => 'processing',
+            'ts' => static::timestamp(),
+            'wait' => $wait,
+        ]);
     }
 
     /**
      * Emit a job processed event and stop duration timing.
      */
-    public static function processed(?string $connectionName, $job): void
+    public static function processed(?string $connectionName): void
     {
-        static::forConnection($connectionName)?->safely(function ($emitter) use ($connectionName, $job) {
-            $jobContext = $emitter->jobContext($job);
-            $key = $emitter->processingKey($jobContext['job.uuid'], $jobContext['job.id']);
-            $emitter->emit([
-                ...$emitter->baseRecord('job.processed', $connectionName, $jobContext['queue']),
-                'messaging.operation.name' => 'process',
-                ...$emitter->jobRecord($jobContext),
-                'laravel.queue.wait_s' => $emitter->waitSeconds($job),
-                'laravel.queue.duration_s' => $emitter->durationSeconds($key),
-                'laravel.queue.result' => $emitter->call($job, 'isDeleted') ? 'deleted' : 'processed',
-                ...$emitter->correlationRecord(),
-            ]);
+        if (! static::shouldEmit($connectionName)) {
+            return;
+        }
 
-            $emitter->forgetDuration($key);
-        });
+        $key = $connectionName;
+        $duration = static::durationSeconds($key);
+
+        static::emit([
+            'event' => 'processed',
+            'ts' => static::timestamp(),
+            'duration' => $duration,
+        ]);
+
+        static::forgetDuration($key);
     }
 
     /**
      * Emit a job released event and stop duration timing.
-     *
-     * @param  int|null  $backoff
      */
-    public static function released(?string $connectionName, $job, $backoff): void
+    public static function released(?string $connectionName, int $backoff): void
     {
-        static::forConnection($connectionName)?->safely(function ($emitter) use ($connectionName, $job, $backoff) {
-            $jobContext = $emitter->jobContext($job);
-            $key = $emitter->processingKey($jobContext['job.uuid'], $jobContext['job.id']);
-            $emitter->emit([
-                ...$emitter->baseRecord('job.released', $connectionName, $jobContext['queue']),
-                'messaging.operation.name' => 'settle',
-                ...$emitter->jobRecord($jobContext),
-                'laravel.queue.backoff_s' => $emitter->toFloat($backoff),
-                'laravel.queue.duration_s' => $emitter->durationSeconds($key),
-                'laravel.queue.result' => 'released',
-                ...$emitter->correlationRecord(),
-            ]);
+        if (! static::shouldEmit($connectionName)) {
+            return;
+        }
 
-            $emitter->forgetDuration($key);
-        });
+        $key = $connectionName;
+        $duration = static::durationSeconds($key);
+
+        static::emit([
+            'event' => 'released',
+            'ts' => static::timestamp(),
+            'backoff' => $backoff,
+            'duration' => $duration,
+        ]);
+
+        static::forgetDuration($key);
     }
 
     /**
      * Emit a job failed event and stop duration timing.
      */
-    public static function failed(?string $connectionName, $job, ?\Throwable $exception): void
+    public static function failed(?string $connectionName): void
     {
-        static::forConnection($connectionName)?->safely(function ($emitter) use ($connectionName, $job, $exception) {
-            $jobContext = $emitter->jobContext($job);
-            $key = $emitter->processingKey($jobContext['job.uuid'], $jobContext['job.id']);
-            $emitter->emit([
-                ...$emitter->baseRecord('job.failed', $connectionName, $jobContext['queue']),
-                'messaging.operation.name' => 'settle',
-                ...$emitter->jobRecord($jobContext),
-                'laravel.queue.duration_s' => $emitter->durationSeconds($key),
-                'laravel.queue.result' => 'failed',
-                'error.type' => $exception ? $exception::class : null,
-                'error.message' => $emitter->truncateErrorMessage($exception?->getMessage()),
-                ...$emitter->correlationRecord(),
-            ]);
+        if (! static::shouldEmit($connectionName)) {
+            return;
+        }
 
-            $emitter->forgetDuration($key);
-        });
+        $key = $connectionName;
+        $duration = static::durationSeconds($key);
+
+        static::emit([
+            'event' => 'failed',
+            'ts' => static::timestamp(),
+            'duration' => $duration,
+        ]);
+
+        static::forgetDuration($key);
     }
 
     /**
      * Emit a job timed out event and stop duration timing.
      */
-    public static function timedOut(?string $connectionName, $job): void
+    public static function timedOut(?string $connectionName): void
     {
-        static::forConnection($connectionName)?->safely(function ($emitter) use ($connectionName, $job) {
-            $jobContext = $emitter->jobContext($job);
-            $key = $emitter->processingKey($jobContext['job.uuid'], $jobContext['job.id']);
-            $emitter->emit([
-                ...$emitter->baseRecord('job.timed_out', $connectionName, $jobContext['queue']),
-                'messaging.operation.name' => 'process',
-                ...$emitter->jobRecord($jobContext),
-                'laravel.queue.duration_s' => $emitter->durationSeconds($key),
-                'laravel.queue.result' => 'timed_out',
-                ...$emitter->correlationRecord(),
-            ]);
-
-            $emitter->forgetDuration($key);
-        });
-    }
-
-    /**
-     * Get the configured emitter for the given connection.
-     */
-    protected static function forConnection(?string $connectionName): ?self
-    {
-        if (! static::$instance instanceof self) {
-            return null;
+        if (! static::shouldEmit($connectionName)) {
+            return;
         }
 
-        return static::$instance->shouldEmitForConnection($connectionName)
-            ? static::$instance
-            : null;
+        $key = $connectionName;
+        $duration = static::durationSeconds($key);
+
+        static::emit([
+            'event' => 'timed_out',
+            'ts' => static::timestamp(),
+            'duration' => $duration,
+        ]);
+
+        static::forgetDuration($key);
     }
 
     /**
-     * Determine if queue events should be emitted for the given connection.
+     * Determine if events should be emitted for the connection.
      */
-    protected function shouldEmitForConnection(?string $connectionName): bool
+    protected static function shouldEmit(?string $connectionName): bool
     {
-        $connectionName = $this->toString($connectionName) ?? 'unknown';
-
-        if ($connectionName === 'sync') {
+        if (! static::$enabled) {
             return false;
         }
 
-        return $this->messagingSystem($connectionName) !== 'sync';
+        if ($connectionName === null) {
+            return false;
+        }
+
+        // Only emit for SQS driver
+        return $connectionName === 'sqs' || \str_starts_with($connectionName, 'sqs');
     }
 
     /**
-     * Get the base queue event record.
-     *
-     * @param  string|null  $queue
-     * @return array<string, mixed>
+     * Get the current timestamp in seconds.
      */
-    protected function baseRecord(string $eventName, ?string $connectionName, ?string $queue): array
+    protected static function timestamp(): float
     {
-        $connectionName = $this->toString($connectionName) ?? 'unknown';
-        $queue = $this->toString($queue) ?? 'default';
-
-        return [
-            'schema_version' => static::SCHEMA_VERSION,
-            'kind' => static::KIND,
-            'event_name' => $eventName,
-            'timestamp' => $this->timestamp(),
-            'service.name' => (string) $this->config('app.name', 'laravel'),
-            'deployment.environment.name' => (string) $this->config('app.env', 'production'),
-            'laravel.queue.connection' => $connectionName,
-            'messaging.system' => $this->messagingSystem($connectionName),
-            'messaging.destination.name' => $queue,
-        ];
+        return \microtime(true);
     }
 
     /**
-     * Get the queue event job record.
-     *
-     * @param  array<string, mixed>  $job
-     * @return array<string, mixed>
+     * Get the queue duration in seconds.
      */
-    protected function jobRecord(array $job): array
+    protected static function durationSeconds(string $key): ?float
     {
-        return [
-            'job.uuid' => $job['job.uuid'],
-            'job.id' => $job['job.id'],
-            'job.name' => $job['job.name'],
-            'laravel.queue.attempt' => $job['laravel.queue.attempt'],
-        ];
-    }
-
-    /**
-     * Get the queue event job context.
-     *
-     * @return array<string, mixed>
-     */
-    protected function jobContext($job): array
-    {
-        return [
-            'job.uuid' => $this->toString($this->call($job, 'uuid')),
-            'job.id' => $this->toIdentifier($this->call($job, 'getJobId')),
-            'job.name' => $this->jobName($this->call($job, 'resolveName') ?? $job),
-            'queue' => $this->toString($this->call($job, 'getQueue')),
-            'laravel.queue.attempt' => $this->toInteger($this->call($job, 'attempts')),
-        ];
-    }
-
-    /**
-     * Get correlation fields from hidden context.
-     *
-     * @return array<string, string>
-     */
-    protected function correlationRecord(): array
-    {
-        $correlationId = $this->correlationId();
-
-        return $correlationId === null ? [] : [
-            'correlation_id' => $correlationId,
-        ];
-    }
-
-    /**
-     * Get the current correlation ID from hidden context.
-     */
-    protected function correlationId(): ?string
-    {
-        try {
-            return $this->toString(Context::getHidden('laravel_cloud_request_id'));
-        } catch (\Throwable) {
+        if (! isset(static::$processingStartedAt[$key])) {
             return null;
         }
+
+        return \max(\microtime(true) - static::$processingStartedAt[$key], 0.0);
     }
 
     /**
-     * Get the queue event messaging system.
+     * Forget a queue duration start time.
      */
-    protected function messagingSystem(string $connectionName): string
+    protected static function forgetDuration(string $key): void
     {
-        return $this->toString(
-            $this->config("queue.connections.{$connectionName}.driver")
-        ) ?? $connectionName;
-    }
-
-    /**
-     * Get the current timestamp.
-     */
-    protected function timestamp(): string
-    {
-        return (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))
-            ->format('Y-m-d\TH:i:s.u\Z');
+        unset(static::$processingStartedAt[$key]);
     }
 
     /**
      * Emit a queue event.
-     *
-     * @param  array<string, mixed>  $record
      */
-    protected function emit(array $record): void
+    protected static function emit(array $record): void
     {
-        $payload = \json_encode($record, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_PRESERVE_ZERO_FRACTION);
+        $payload = \json_encode($record, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
 
         if ($payload === false) {
             return;
@@ -376,36 +249,24 @@ class CloudQueueEventEmitter
             return;
         }
 
-        $this->writeToSocket($payload.PHP_EOL);
-    }
-
-    /**
-     * Execute a callback safely.
-     */
-    protected function safely(callable $callback): void
-    {
-        try {
-            $callback($this);
-        } catch (\Throwable) {
-            // Ignore queue emission errors so queue processing can continue.
-        }
+        static::writeToSocket($payload.\PHP_EOL);
     }
 
     /**
      * Write a payload to the configured socket.
      */
-    protected function writeToSocket(string $payload): void
+    protected static function writeToSocket(string $payload): void
     {
-        $socket = $this->socket();
+        $socket = static::socket();
 
-        if (! \is_resource($socket)) {
+        if (! is_resource($socket)) {
             return;
         }
 
         if (@\fwrite($socket, $payload) === false) {
             @\fclose($socket);
 
-            $this->socket = null;
+            static::$socket = null;
         }
     }
 
@@ -414,22 +275,22 @@ class CloudQueueEventEmitter
      *
      * @return resource|null
      */
-    protected function socket()
+    protected static function socket()
     {
-        if (\is_resource($this->socket)) {
-            return $this->socket;
+        if (\is_resource(static::$socket)) {
+            return static::$socket;
         }
 
-        if (! \is_string($this->socketConnection) || $this->socketConnection === '') {
+        if (! \is_string(static::$socketConnection) || static::$socketConnection === '') {
             return null;
         }
 
         $socket = @\stream_socket_client(
-            $this->socketConnection,
+            static::$socketConnection,
             $errorCode,
             $errorMessage,
             0.2,
-            STREAM_CLIENT_CONNECT | STREAM_CLIENT_PERSISTENT,
+            \STREAM_CLIENT_CONNECT | \STREAM_CLIENT_PERSISTENT,
         );
 
         if (! \is_resource($socket)) {
@@ -438,199 +299,6 @@ class CloudQueueEventEmitter
 
         @\stream_set_blocking($socket, false);
 
-        return $this->socket = $socket;
-    }
-
-    /**
-     * Decode a queue payload.
-     *
-     * @return array<string, mixed>
-     */
-    protected function decodePayload($payload): array
-    {
-        if (! \is_string($payload) || $payload === '') {
-            return [];
-        }
-
-        $decoded = \json_decode($payload, true);
-
-        return \is_array($decoded) ? $decoded : [];
-    }
-
-    /**
-     * Determine the queue event processing key.
-     *
-     * @param  string|int|null  $jobId
-     */
-    protected function processingKey(?string $uuid, $jobId): ?string
-    {
-        if ($uuid !== null && $uuid !== '') {
-            return 'uuid:'.$uuid;
-        }
-
-        if (! \is_null($jobId) && $jobId !== '') {
-            return 'id:'.(string) $jobId;
-        }
-
-        return null;
-    }
-
-    /**
-     * Get the queue wait time in seconds.
-     */
-    protected function waitSeconds($job): ?float
-    {
-        $payload = $this->call($job, 'payload');
-
-        if (! \is_array($payload)) {
-            return null;
-        }
-
-        $createdAt = $this->toInteger($payload['createdAt'] ?? null);
-
-        if ($createdAt === null) {
-            return null;
-        }
-
-        return \max(\microtime(true) - $createdAt, 0.0);
-    }
-
-    /**
-     * Get the queue duration in seconds.
-     */
-    protected function durationSeconds(?string $key): ?float
-    {
-        if ($key === null || ! isset($this->processingStartedAt[$key])) {
-            return null;
-        }
-
-        return \max(\microtime(true) - $this->processingStartedAt[$key], 0.0);
-    }
-
-    /**
-     * Forget a queue duration start time.
-     */
-    protected function forgetDuration(?string $key): void
-    {
-        if ($key === null) {
-            return;
-        }
-
-        unset($this->processingStartedAt[$key]);
-    }
-
-    /**
-     * Resolve the queue event job name.
-     */
-    protected function jobName($job): string
-    {
-        if (\is_string($job) && $job !== '') {
-            return $job;
-        }
-
-        if ($job instanceof \Closure) {
-            return 'Closure';
-        }
-
-        if (\is_object($job)) {
-            return $job::class;
-        }
-
-        return 'Unknown';
-    }
-
-    /**
-     * Truncate a queue error message.
-     */
-    protected function truncateErrorMessage(?string $message): ?string
-    {
-        if ($message === null || $message === '') {
-            return null;
-        }
-
-        if (\mb_strlen($message) <= static::ERROR_MESSAGE_LIMIT) {
-            return $message;
-        }
-
-        return \mb_substr($message, 0, static::ERROR_MESSAGE_LIMIT);
-    }
-
-    /**
-     * Convert a value to a string.
-     */
-    protected function toString($value): ?string
-    {
-        if (! \is_string($value) || $value === '') {
-            return null;
-        }
-
-        return $value;
-    }
-
-    /**
-     * Convert a value to an integer.
-     */
-    protected function toInteger($value): ?int
-    {
-        if (! \is_numeric($value)) {
-            return null;
-        }
-
-        return (int) $value;
-    }
-
-    /**
-     * Convert a value to a float.
-     */
-    protected function toFloat($value): ?float
-    {
-        if (! \is_numeric($value)) {
-            return null;
-        }
-
-        return (float) $value;
-    }
-
-    /**
-     * Convert a value to a queue identifier.
-     *
-     * @return string|int|null
-     */
-    protected function toIdentifier($value)
-    {
-        return \is_string($value) || \is_int($value)
-            ? $value
-            : null;
-    }
-
-    /**
-     * Call the given method on the target if possible.
-     */
-    protected function call($target, string $method)
-    {
-        if (! \is_object($target) || ! \method_exists($target, $method)) {
-            return null;
-        }
-
-        try {
-            return $target->{$method}();
-        } catch (\Throwable) {
-            return null;
-        }
-    }
-
-    /**
-     * Get a configuration value.
-     *
-     * @param  mixed  $default
-     * @return mixed
-     */
-    protected function config(string $key, $default = null)
-    {
-        try {
-            return $this->app->make('config')->get($key, $default);
-        } catch (\Throwable) {
-            return $default;
-        }
+        return static::$socket = $socket;
     }
 }

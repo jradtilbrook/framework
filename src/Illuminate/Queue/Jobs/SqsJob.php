@@ -5,6 +5,7 @@ namespace Illuminate\Queue\Jobs;
 use Aws\Sqs\SqsClient;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Queue\Job as JobContract;
+use Illuminate\Queue\CloudQueueEventEmitter;
 
 class SqsJob extends Job implements JobContract
 {
@@ -55,6 +56,8 @@ class SqsJob extends Job implements JobContract
             'ReceiptHandle' => $this->job['ReceiptHandle'],
             'VisibilityTimeout' => $delay,
         ]);
+
+        CloudQueueEventEmitter::released($this->connectionName, $delay);
     }
 
     /**
@@ -119,5 +122,41 @@ class SqsJob extends Job implements JobContract
     public function getSqsJob()
     {
         return $this->job;
+    }
+
+    /**
+     * Fire the job.
+     *
+     * @return void
+     */
+    public function fire()
+    {
+        $payload = $this->payload();
+        $wait = isset($payload['createdAt']) ? \max(\microtime(true) - $payload['createdAt'], 0.0) : 0.0;
+
+        CloudQueueEventEmitter::processing($this->connectionName, $wait);
+
+        try {
+            parent::fire();
+
+            CloudQueueEventEmitter::processed($this->connectionName);
+        } catch (Throwable $e) {
+            CloudQueueEventEmitter::failed($this->connectionName);
+
+            throw $e;
+        }
+    }
+
+    /**
+     * Delete the job, call the "failed" method, and raise the job failed event.
+     *
+     * @param  \Throwable|null  $e
+     * @return void
+     */
+    public function fail($e = null)
+    {
+        CloudQueueEventEmitter::failed($this->connectionName);
+
+        parent::fail($e);
     }
 }

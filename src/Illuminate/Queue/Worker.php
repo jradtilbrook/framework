@@ -252,8 +252,6 @@ class Worker
         // signals supported in recent versions of PHP to accomplish it conveniently.
         pcntl_signal(SIGALRM, function () use ($job, $options) {
             if ($job) {
-                CloudQueueEventEmitter::timedOut($job->getConnectionName(), $job);
-
                 $this->markJobAsFailedIfWillExceedMaxAttempts(
                     $job->getConnectionName(), $job, (int) $options->maxTries, $e = $this->timeoutExceededException($job)
                 );
@@ -498,14 +496,10 @@ class Worker
                 return $this->raiseAfterJobEvent($connectionName, $job);
             }
 
-            CloudQueueEventEmitter::processing($connectionName, $job);
-
             // Here we will fire off the job and let it process. We will catch any exceptions, so
             // they can be reported to the developer's logs, etc. Once the job is finished the
             // proper events will be fired to let any listeners know this job has completed.
             $job->fire();
-
-            CloudQueueEventEmitter::processed($connectionName, $job);
 
             $this->raiseAfterJobEvent($connectionName, $job);
         } catch (Throwable $e) {
@@ -557,8 +551,6 @@ class Worker
                 $backoff = $this->calculateBackoff($job, $options);
 
                 $job->release($backoff);
-
-                CloudQueueEventEmitter::released($connectionName, $job, $backoff);
 
                 $this->events->dispatch(new JobReleasedAfterException(
                     $connectionName, $job, $backoff

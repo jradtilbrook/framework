@@ -146,7 +146,6 @@ class Cloud
     public static function configureQueueEventEmission(Application $app): void
     {
         CloudQueueEventEmitter::configure(
-            $app,
             $_ENV['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET']
                 ?? $_SERVER['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET']
                 ?? null,

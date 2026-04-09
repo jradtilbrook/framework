@@ -197,7 +197,11 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
             $queue,
             null,
             function ($payload, $queue) use ($job) {
-                return $this->pushRaw($payload, $queue, $this->getQueueableOptions($job, $queue, $payload));
+                $result = $this->pushRaw($payload, $queue, $this->getQueueableOptions($job, $queue, $payload));
+
+                CloudQueueEventEmitter::queued($this->connectionName, 0.0);
+
+                return $result;
             }
         );
     }
@@ -234,7 +238,13 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
             $queue,
             $delay,
             function ($payload, $queue, $delay) use ($job) {
-                return $this->pushRaw($payload, $queue, $this->getQueueableOptions($job, $queue, $payload, $delay));
+                $result = $this->pushRaw($payload, $queue, $this->getQueueableOptions($job, $queue, $payload, $delay));
+
+                $payloadArray = \json_decode($payload, true);
+                $delaySeconds = $payloadArray['delay'] ?? 0;
+                CloudQueueEventEmitter::queued($this->connectionName, (float) $delaySeconds);
+
+                return $result;
             }
         );
     }
