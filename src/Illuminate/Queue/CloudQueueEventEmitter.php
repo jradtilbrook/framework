@@ -93,7 +93,7 @@ class CloudQueueEventEmitter
 
         $key = $connectionName;
 
-        static::$processingStartedAt[$key] = \microtime(true);
+        static::$processingStartedAt[$key] = microtime(true);
 
         static::emit([
             'event' => 'processing',
@@ -201,7 +201,7 @@ class CloudQueueEventEmitter
         }
 
         // Only emit for SQS driver
-        return $connectionName === 'sqs' || \str_starts_with($connectionName, 'sqs');
+        return $connectionName === 'sqs' || str_starts_with($connectionName, 'sqs');
     }
 
     /**
@@ -209,7 +209,7 @@ class CloudQueueEventEmitter
      */
     protected static function timestamp(): float
     {
-        return \microtime(true);
+        return microtime(true);
     }
 
     /**
@@ -221,7 +221,7 @@ class CloudQueueEventEmitter
             return null;
         }
 
-        return \max(\microtime(true) - static::$processingStartedAt[$key], 0.0);
+        return max(microtime(true) - static::$processingStartedAt[$key], 0.0);
     }
 
     /**

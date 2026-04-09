@@ -240,7 +240,7 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
             function ($payload, $queue, $delay) use ($job) {
                 return tap($this->pushRaw($payload, $queue, $this->getQueueableOptions($job, $queue, $payload, $delay)), function () use ($payload) {
                     if (laravel_cloud()) {
-                        $payloadArray = \json_decode($payload, true);
+                        $payloadArray = json_decode($payload, true);
                         $delaySeconds = $payloadArray['delay'] ?? 0;
                         CloudQueueEventEmitter::queued($this->connectionName, (float) $delaySeconds);
                     }

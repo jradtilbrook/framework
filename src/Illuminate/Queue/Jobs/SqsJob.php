@@ -134,7 +134,7 @@ class SqsJob extends Job implements JobContract
     public function fire()
     {
         $payload = $this->payload();
-        $wait = isset($payload['createdAt']) ? \max(\microtime(true) - $payload['createdAt'], 0.0) : 0.0;
+        $wait = isset($payload['createdAt']) ? microtime(true) - $payload['createdAt'] : 0.0;
 
         if (laravel_cloud()) {
             CloudQueueEventEmitter::processing($this->connectionName, $wait);
