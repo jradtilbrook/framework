@@ -76,8 +76,8 @@ class CloudQueueEventEmitter
         }
 
         static::emit([
-            'event' => 'queued',
-            'ts' => static::timestamp(),
+            'type' => 'job.queued',
+            'timestamp' => static::timestamp(),
             'delay' => $delay,
         ]);
     }
@@ -96,8 +96,8 @@ class CloudQueueEventEmitter
         static::$processingStartedAt[$key] = microtime(true);
 
         static::emit([
-            'event' => 'processing',
-            'ts' => static::timestamp(),
+            'type' => 'job.processing',
+            'timestamp' => static::timestamp(),
             'wait' => $wait,
         ]);
     }
@@ -115,8 +115,8 @@ class CloudQueueEventEmitter
         $duration = static::durationSeconds($key);
 
         static::emit([
-            'event' => 'processed',
-            'ts' => static::timestamp(),
+            'type' => 'job.processed',
+            'timestamp' => static::timestamp(),
             'duration' => $duration,
         ]);
 
@@ -136,8 +136,8 @@ class CloudQueueEventEmitter
         $duration = static::durationSeconds($key);
 
         static::emit([
-            'event' => 'released',
-            'ts' => static::timestamp(),
+            'type' => 'job.released',
+            'timestamp' => static::timestamp(),
             'backoff' => $backoff,
             'duration' => $duration,
         ]);
@@ -158,8 +158,8 @@ class CloudQueueEventEmitter
         $duration = static::durationSeconds($key);
 
         static::emit([
-            'event' => 'failed',
-            'ts' => static::timestamp(),
+            'type' => 'job.failed',
+            'timestamp' => static::timestamp(),
             'duration' => $duration,
         ]);
 
@@ -179,8 +179,8 @@ class CloudQueueEventEmitter
         $duration = static::durationSeconds($key);
 
         static::emit([
-            'event' => 'timed_out',
-            'ts' => static::timestamp(),
+            'type' => 'job.timed_out',
+            'timestamp' => static::timestamp(),
             'duration' => $duration,
         ]);
 
