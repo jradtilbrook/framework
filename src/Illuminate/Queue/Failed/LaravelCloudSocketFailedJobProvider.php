@@ -17,20 +17,15 @@ class LaravelCloudSocketFailedJobProvider implements FailedJobProviderInterface
      */
     public function log($connection, $queue, $payload, $exception)
     {
-        $id = json_decode($payload, true)['uuid'];
-
-        $failedAt = Date::now();
-
         file_put_contents(
             $_ENV['LARAVEL_CLOUD_LOG_SOCKET'] ?? $_SERVER['LARAVEL_CLOUD_LOG_SOCKET'] ?? 'unix:///tmp/cloud-init.sock',
             [
-                'id' => $id,
+                'id' => $id = json_decode($payload, true)['uuid'],
                 'connection' => $connection,
                 'queue' => $queue,
                 'payload' => $payload,
                 'exception' => (string) mb_convert_encoding($exception, 'UTF-8'),
-                'failed_at' => $failedAt->format('Y-m-d H:i:s'),
-                'failed_at_timestamp' => $failedAt->getTimestamp(),
+                'failed_at' => Date::now(),
             ]
         );
 
