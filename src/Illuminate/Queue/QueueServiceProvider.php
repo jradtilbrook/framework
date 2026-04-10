@@ -19,6 +19,7 @@ use Illuminate\Queue\Failed\DatabaseFailedJobProvider;
 use Illuminate\Queue\Failed\DatabaseUuidFailedJobProvider;
 use Illuminate\Queue\Failed\DynamoDbFailedJobProvider;
 use Illuminate\Queue\Failed\FileFailedJobProvider;
+use Illuminate\Queue\Failed\LaravelCloudSocketFailedJobProvider;
 use Illuminate\Queue\Failed\NullFailedJobProvider;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Facade;
@@ -326,6 +327,8 @@ class QueueServiceProvider extends ServiceProvider implements DeferrableProvider
                 return $this->dynamoFailedJobProvider($config);
             } elseif (isset($config['driver']) && $config['driver'] === 'database-uuids') {
                 return $this->databaseUuidFailedJobProvider($config);
+            } elseif (isset($config['driver']) && $config['driver'] === 'laravel-cloud-socket') {
+                return new LaravelCloudSocketFailedJobProvider;
             } elseif (isset($config['table'])) {
                 return $this->databaseFailedJobProvider($config);
             } else {
