@@ -218,10 +218,8 @@ abstract class Job
 
             $this->failed($e);
         } finally {
-            $exception = $e ?: new ManuallyFailedException;
-
             $this->resolve(Dispatcher::class)->dispatch(new JobFailed(
-                $this->connectionName, $this, $exception
+                $this->connectionName, $this, $e ?: new ManuallyFailedException
             ));
         }
     }

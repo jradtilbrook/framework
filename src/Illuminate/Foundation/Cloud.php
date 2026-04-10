@@ -5,7 +5,6 @@ namespace Illuminate\Foundation;
 use Illuminate\Database\Migrations\Migrator;
 use Illuminate\Foundation\Bootstrap\HandleExceptions;
 use Illuminate\Foundation\Bootstrap\LoadConfiguration;
-use Illuminate\Queue\CloudQueueEventEmitter;
 use Monolog\Formatter\JsonFormatter;
 use Monolog\Handler\SocketHandler;
 use PDO;
@@ -33,7 +32,6 @@ class Cloud
             },
             HandleExceptions::class => function () use ($app) {
                 static::configureCloudLogging($app);
-                static::configureQueueEventEmission($app);
             },
             default => fn () => true,
         })();
@@ -140,15 +138,4 @@ class Cloud
         ]);
     }
 
-    /**
-     * Configure cloud queue event emission.
-     */
-    public static function configureQueueEventEmission(Application $app): void
-    {
-        CloudQueueEventEmitter::configure(
-            $_ENV['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET']
-                ?? $_SERVER['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET']
-                ?? null,
-        );
-    }
 }
