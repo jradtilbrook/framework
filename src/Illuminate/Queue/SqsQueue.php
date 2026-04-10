@@ -197,11 +197,7 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
             $queue,
             null,
             function ($payload, $queue) use ($job) {
-                return tap($this->pushRaw($payload, $queue, $this->getQueueableOptions($job, $queue, $payload)), function () {
-                    if (laravel_cloud()) {
-                        CloudQueueEventEmitter::queued(0.0);
-                    }
-                });
+                return $this->pushRaw($payload, $queue, $this->getQueueableOptions($job, $queue, $payload));
             }
         );
     }
@@ -216,6 +212,11 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
      */
     public function pushRaw($payload, $queue = null, array $options = [])
     {
+        if (laravel_cloud()) {
+            $delaySeconds = $options['DelaySeconds'] ?? 0;
+            CloudQueueEventEmitter::queued((float) $delaySeconds);
+        }
+
         return $this->sqs->sendMessage([
             'QueueUrl' => $this->getQueue($queue), 'MessageBody' => $payload, ...$options,
         ])->get('MessageId');
@@ -238,13 +239,7 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
             $queue,
             $delay,
             function ($payload, $queue, $delay) use ($job) {
-                return tap($this->pushRaw($payload, $queue, $this->getQueueableOptions($job, $queue, $payload, $delay)), function () use ($payload) {
-                    if (laravel_cloud()) {
-                        $payloadArray = json_decode($payload, true);
-                        $delaySeconds = $payloadArray['delay'] ?? 0;
-                        CloudQueueEventEmitter::queued((float) $delaySeconds);
-                    }
-                });
+                return $this->pushRaw($payload, $queue, $this->getQueueableOptions($job, $queue, $payload, $delay));
             }
         );
     }
