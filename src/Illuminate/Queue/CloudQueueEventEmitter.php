@@ -5,11 +5,11 @@ namespace Illuminate\Queue;
 class CloudQueueEventEmitter
 {
     /**
-     * The processing start times keyed by job identifier.
+     * The processing start time.
      *
-     * @var array<string, float>
+     * @var float|null
      */
-    protected static $processingStartedAt = [];
+    protected static $processingStartedAt;
 
     /**
      * The socket stream resource.
@@ -33,9 +33,9 @@ class CloudQueueEventEmitter
     /**
      * Emit a job processing event and begin duration timing.
      */
-    public static function processing(float $wait): void
+    public static function processing(?float $wait): void
     {
-        static::$processingStartedAt['sqs'] = microtime(true);
+        static::$processingStartedAt = microtime(true);
 
         static::emit([
             'type' => 'job.processing',
@@ -106,11 +106,11 @@ class CloudQueueEventEmitter
      */
     protected static function durationSeconds(): ?float
     {
-        if (! isset(static::$processingStartedAt['sqs'])) {
+        if (static::$processingStartedAt === null) {
             return null;
         }
 
-        return max(microtime(true) - static::$processingStartedAt['sqs'], 0.0);
+        return max(microtime(true) - static::$processingStartedAt, 0.0);
     }
 
     /**
@@ -118,7 +118,7 @@ class CloudQueueEventEmitter
      */
     protected static function forgetDuration(): void
     {
-        unset(static::$processingStartedAt['sqs']);
+        static::$processingStartedAt = null;
     }
 
     /**
