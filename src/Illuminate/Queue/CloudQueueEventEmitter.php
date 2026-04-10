@@ -19,62 +19,10 @@ class CloudQueueEventEmitter
     protected static $socket;
 
     /**
-     * The configured socket connection string.
-     *
-     * @var string|null
-     */
-    protected static $socketConnection;
-
-    /**
-     * The callback used to write the event payload.
-     *
-     * @var callable|null
-     */
-    protected static $writeUsing;
-
-    /**
-     * Whether the emitter is enabled.
-     *
-     * @var bool
-     */
-    protected static $enabled = false;
-
-    /**
-     * Configure the cloud queue event emitter.
-     */
-    public static function configure(?string $socketConnection = null): void
-    {
-        static::$enabled = true;
-        static::$socketConnection = $socketConnection;
-    }
-
-    /**
-     * Disable the cloud queue event emitter.
-     */
-    public static function disable(): void
-    {
-        static::$enabled = false;
-        static::$socketConnection = null;
-        static::$socket = null;
-    }
-
-    /**
-     * Set the callback used to write payloads.
-     */
-    public static function writeUsing(?callable $callback): void
-    {
-        static::$writeUsing = $callback;
-    }
-
-    /**
      * Emit a queued job event.
      */
     public static function queued(float $delay): void
     {
-        if (! static::$enabled) {
-            return;
-        }
-
         static::emit([
             'type' => 'job.queued',
             'timestamp' => static::timestamp(),
@@ -87,10 +35,6 @@ class CloudQueueEventEmitter
      */
     public static function processing(float $wait): void
     {
-        if (! static::$enabled) {
-            return;
-        }
-
         static::$processingStartedAt['sqs'] = microtime(true);
 
         static::emit([
@@ -105,10 +49,6 @@ class CloudQueueEventEmitter
      */
     public static function processed(): void
     {
-        if (! static::$enabled) {
-            return;
-        }
-
         $duration = static::durationSeconds();
 
         static::emit([
@@ -125,10 +65,6 @@ class CloudQueueEventEmitter
      */
     public static function released(int $backoff): void
     {
-        if (! static::$enabled) {
-            return;
-        }
-
         $duration = static::durationSeconds();
 
         static::emit([
@@ -146,10 +82,6 @@ class CloudQueueEventEmitter
      */
     public static function failed(): void
     {
-        if (! static::$enabled) {
-            return;
-        }
-
         $duration = static::durationSeconds();
 
         static::emit([
@@ -194,19 +126,18 @@ class CloudQueueEventEmitter
      */
     protected static function emit(array $record): void
     {
-        $payload = \json_encode($record, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+        if (! isset($_ENV['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET']) &&
+            ! isset($_SERVER['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET'])) {
+            return;
+        }
+
+        $payload = json_encode($record, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
         if ($payload === false) {
             return;
         }
 
-        if (\is_callable(static::$writeUsing)) {
-            (static::$writeUsing)($payload);
-
-            return;
-        }
-
-        static::writeToSocket($payload.\PHP_EOL);
+        static::writeToSocket($payload.PHP_EOL);
     }
 
     /**
@@ -220,8 +151,8 @@ class CloudQueueEventEmitter
             return;
         }
 
-        if (@\fwrite($socket, $payload) === false) {
-            @\fclose($socket);
+        if (@fwrite($socket, $payload) === false) {
+            @fclose($socket);
 
             static::$socket = null;
         }
@@ -234,27 +165,31 @@ class CloudQueueEventEmitter
      */
     protected static function socket()
     {
-        if (\is_resource(static::$socket)) {
+        if (is_resource(static::$socket)) {
             return static::$socket;
         }
 
-        if (! \is_string(static::$socketConnection) || static::$socketConnection === '') {
+        $socketConnection = $_ENV['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET']
+            ?? $_SERVER['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET']
+            ?? null;
+
+        if (! is_string($socketConnection) || $socketConnection === '') {
             return null;
         }
 
-        $socket = @\stream_socket_client(
-            static::$socketConnection,
+        $socket = @stream_socket_client(
+            $socketConnection,
             $errorCode,
             $errorMessage,
             0.2,
-            \STREAM_CLIENT_CONNECT | \STREAM_CLIENT_PERSISTENT,
+            STREAM_CLIENT_CONNECT | STREAM_CLIENT_PERSISTENT,
         );
 
-        if (! \is_resource($socket)) {
+        if (! is_resource($socket)) {
             return null;
         }
 
-        @\stream_set_blocking($socket, false);
+        @stream_set_blocking($socket, false);
 
         return static::$socket = $socket;
     }

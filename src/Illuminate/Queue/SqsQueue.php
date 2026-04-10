@@ -340,10 +340,16 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
     {
         $response = $this->sqs->receiveMessage([
             'QueueUrl' => $queue = $this->getQueue($queue),
-            'AttributeNames' => ['ApproximateReceiveCount'],
+            'AttributeNames' => ['ApproximateReceiveCount', 'SentTimestamp', 'ApproximateFirstReceiveTimestamp'],
         ]);
 
         if (! is_null($response['Messages']) && count($response['Messages']) > 0) {
+            // TODO: we can only rely on these timestamps for the first attempt of a job as they are not updated when released
+            if (laravel_cloud() && $response['Messages'][0]['Attributes']['ApproximateReceiveCount'] <= 1) {
+                $wait = $response['Messages'][0]['Attributes']['ApproximateFirstReceiveTimestamp'] - $response['Messages'][0]['Attributes']['SentTimestamp'];
+                CloudQueueEventEmitter::processing($wait / 1000);
+            }
+
             return new SqsJob(
                 $this->container, $this->sqs, $response['Messages'][0],
                 $this->connectionName, $queue

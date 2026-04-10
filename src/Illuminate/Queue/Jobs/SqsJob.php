@@ -6,6 +6,7 @@ use Aws\Sqs\SqsClient;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Queue\Job as JobContract;
 use Illuminate\Queue\CloudQueueEventEmitter;
+use Throwable;
 
 class SqsJob extends Job implements JobContract
 {
@@ -133,13 +134,6 @@ class SqsJob extends Job implements JobContract
      */
     public function fire()
     {
-        $payload = $this->payload();
-        $wait = isset($payload['createdAt']) ? microtime(true) - $payload['createdAt'] : 0.0;
-
-        if (laravel_cloud()) {
-            CloudQueueEventEmitter::processing($wait);
-        }
-
         try {
             parent::fire();
 
