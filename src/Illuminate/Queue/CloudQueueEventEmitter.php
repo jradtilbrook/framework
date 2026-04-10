@@ -12,13 +12,6 @@ class CloudQueueEventEmitter
     protected static $processingStartedAt;
 
     /**
-     * The socket stream resource.
-     *
-     * @var resource|null
-     */
-    protected static $socket;
-
-    /**
      * Emit a queued job event.
      */
     public static function queued(float $delay): void
@@ -126,71 +119,6 @@ class CloudQueueEventEmitter
      */
     protected static function emit(array $record): void
     {
-        if (! isset($_ENV['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET']) &&
-            ! isset($_SERVER['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET'])) {
-            return;
-        }
-
-        $payload = json_encode($record, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-
-        if ($payload === false) {
-            return;
-        }
-
-        static::writeToSocket($payload.PHP_EOL);
-    }
-
-    /**
-     * Write a payload to the configured socket.
-     */
-    protected static function writeToSocket(string $payload): void
-    {
-        $socket = static::socket();
-
-        if (! is_resource($socket)) {
-            return;
-        }
-
-        if (@fwrite($socket, $payload) === false) {
-            @fclose($socket);
-
-            static::$socket = null;
-        }
-    }
-
-    /**
-     * Get the socket resource.
-     *
-     * @return resource|null
-     */
-    protected static function socket()
-    {
-        if (is_resource(static::$socket)) {
-            return static::$socket;
-        }
-
-        $socketConnection = $_ENV['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET']
-            ?? $_SERVER['LARAVEL_CLOUD_QUEUE_EVENT_SOCKET']
-            ?? null;
-
-        if (! is_string($socketConnection) || $socketConnection === '') {
-            return null;
-        }
-
-        $socket = @stream_socket_client(
-            $socketConnection,
-            $errorCode,
-            $errorMessage,
-            0.2,
-            STREAM_CLIENT_CONNECT | STREAM_CLIENT_PERSISTENT,
-        );
-
-        if (! is_resource($socket)) {
-            return null;
-        }
-
-        @stream_set_blocking($socket, false);
-
-        return static::$socket = $socket;
+        LaravelCloudSocket::writeJson($record);
     }
 }

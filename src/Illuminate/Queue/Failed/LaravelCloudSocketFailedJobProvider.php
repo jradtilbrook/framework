@@ -2,6 +2,7 @@
 
 namespace Illuminate\Queue\Failed;
 
+use Illuminate\Queue\LaravelCloudSocket;
 use Illuminate\Support\Facades\Date;
 
 class LaravelCloudSocketFailedJobProvider implements FailedJobProviderInterface
@@ -17,17 +18,16 @@ class LaravelCloudSocketFailedJobProvider implements FailedJobProviderInterface
      */
     public function log($connection, $queue, $payload, $exception)
     {
-        file_put_contents(
-            $_ENV['LARAVEL_CLOUD_LOG_SOCKET'] ?? $_SERVER['LARAVEL_CLOUD_LOG_SOCKET'] ?? 'unix:///tmp/cloud-init.sock',
-            [
-                'id' => $id = json_decode($payload, true)['uuid'],
-                'connection' => $connection,
-                'queue' => $queue,
-                'payload' => $payload,
-                'exception' => (string) mb_convert_encoding($exception, 'UTF-8'),
-                'failed_at' => Date::now(),
-            ]
-        );
+        $id = json_decode($payload, true)['uuid'] ?? null;
+
+        LaravelCloudSocket::writeJson([
+            'id' => $id,
+            'connection' => $connection,
+            'queue' => $queue,
+            'payload' => $payload,
+            'exception' => (string) $exception,
+            'failed_at' => Date::now()->toIso8601String(),
+        ]);
 
         return $id;
     }
