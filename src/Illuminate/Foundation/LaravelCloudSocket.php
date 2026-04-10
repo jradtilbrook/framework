@@ -1,6 +1,6 @@
 <?php
 
-namespace Illuminate\Queue;
+namespace Illuminate\Foundation;
 
 class LaravelCloudSocket
 {

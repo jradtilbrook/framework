@@ -2,6 +2,8 @@
 
 namespace Illuminate\Queue;
 
+use Illuminate\Foundation\LaravelCloudSocket;
+
 class CloudQueueEventEmitter
 {
     /**

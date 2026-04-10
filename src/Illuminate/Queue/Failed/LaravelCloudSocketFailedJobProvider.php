@@ -2,7 +2,7 @@
 
 namespace Illuminate\Queue\Failed;
 
-use Illuminate\Queue\LaravelCloudSocket;
+use Illuminate\Foundation\LaravelCloudSocket;
 use Illuminate\Support\Facades\Date;
 
 class LaravelCloudSocketFailedJobProvider implements FailedJobProviderInterface
