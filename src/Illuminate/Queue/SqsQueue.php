@@ -341,9 +341,12 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
         if (! is_null($response['Messages']) && count($response['Messages']) > 0) {
             if (laravel_cloud()) {
                 $wait = $response['Messages'][0]['Attributes']['ApproximateFirstReceiveTimestamp'] - $response['Messages'][0]['Attributes']['SentTimestamp'];
+
                 if ($response['Messages'][0]['Attributes']['ApproximateReceiveCount'] > 1) {
                     $wait = null;
                 }
+
+                // SQS timestamps are in milliseconds
                 CloudQueueEventEmitter::processing($wait / 1000);
             }
 
