@@ -6,7 +6,6 @@ use Aws\Sqs\SqsClient;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Queue\Job as JobContract;
 use Illuminate\Queue\CloudQueueEventEmitter;
-use Throwable;
 
 class SqsJob extends Job implements JobContract
 {
@@ -134,18 +133,10 @@ class SqsJob extends Job implements JobContract
      */
     public function fire()
     {
-        try {
-            parent::fire();
+        parent::fire();
 
-            if (laravel_cloud()) {
-                CloudQueueEventEmitter::processed();
-            }
-        } catch (Throwable $e) {
-            if (laravel_cloud()) {
-                CloudQueueEventEmitter::failed();
-            }
-
-            throw $e;
+        if (laravel_cloud()) {
+            CloudQueueEventEmitter::processed();
         }
     }
 
