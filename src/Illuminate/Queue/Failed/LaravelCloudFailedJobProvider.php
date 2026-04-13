@@ -5,7 +5,7 @@ namespace Illuminate\Queue\Failed;
 use Illuminate\Foundation\LaravelCloudSocket;
 use Illuminate\Support\Facades\Date;
 
-class LaravelCloudSocketFailedJobProvider implements FailedJobProviderInterface
+class LaravelCloudFailedJobProvider implements FailedJobProviderInterface
 {
     /**
      * Log a failed job into storage.
