@@ -146,10 +146,6 @@ class LogManager implements LoggerInterface
 
                 if (method_exists($loggerWithContext->getLogger(), 'pushProcessor')) {
                     $loggerWithContext->pushProcessor($this->app->make(ContextLogProcessor::class));
-
-                    if (laravel_cloud()) {
-                        $loggerWithContext->pushProcessor($this->app->make(CloudRequestIdProcessor::class));
-                    }
                 }
 
                 return $this->channels[$name] = $loggerWithContext;
