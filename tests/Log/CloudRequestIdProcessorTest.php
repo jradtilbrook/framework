@@ -39,13 +39,13 @@ class CloudRequestIdProcessorTest extends TestCase
     {
         $app = Container::getInstance();
         $request = Request::create('/');
-        $request->headers->set('X-Request-ID', 'test-request-id-123');
+        $request->headers->set('X-Request-ID', '550e8400-e29b-41d4-a716-446655440000');
         $app->instance('request', $request);
 
         $processor = new CloudRequestIdProcessor;
         $record = $processor($this->createRecord());
 
-        $this->assertEquals('test-request-id-123', $record->extra['cloud_request_id']);
+        $this->assertEquals('550e8400-e29b-41d4-a716-446655440000', $record->extra['cloud_request_id']);
     }
 
     public function test_does_not_add_field_when_no_request_bound()
@@ -72,7 +72,7 @@ class CloudRequestIdProcessorTest extends TestCase
     {
         $app = Container::getInstance();
         $request = Request::create('/');
-        $request->headers->set('X-Request-ID', 'test-id');
+        $request->headers->set('X-Request-ID', '6ba7b810-9dad-11d1-80b4-00c04fd430c8');
         $app->instance('request', $request);
 
         $record = new LogRecord(
@@ -88,6 +88,6 @@ class CloudRequestIdProcessorTest extends TestCase
         $record = $processor($record);
 
         $this->assertEquals('existing_value', $record->extra['existing_field']);
-        $this->assertEquals('test-id', $record->extra['cloud_request_id']);
+        $this->assertEquals('6ba7b810-9dad-11d1-80b4-00c04fd430c8', $record->extra['cloud_request_id']);
     }
 }
