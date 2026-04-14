@@ -3,7 +3,6 @@
 namespace Illuminate\Log\Context;
 
 use Illuminate\Contracts\Log\ContextLogProcessor as ContextLogProcessorContract;
-use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Queue\Queue;
 use Illuminate\Support\Env;
@@ -31,10 +30,6 @@ class ContextServiceProvider extends ServiceProvider
             });
         }
 
-        if (laravel_cloud()) {
-            $this->app->resolving(Repository::class, fn (Repository $repository) => $this->addCloudRequestIdToContext($repository));
-        }
-
         $this->app->bind(ContextLogProcessorContract::class, fn () => new ContextLogProcessor());
     }
 
@@ -59,49 +54,5 @@ class ContextServiceProvider extends ServiceProvider
             /** @phpstan-ignore staticMethod.notFound */
             Context::hydrate($event->job->payload()['illuminate:log:context'] ?? null);
         });
-    }
-
-    /**
-     * Add cloud request ID from incoming headers.
-     */
-    protected function addCloudRequestIdToContext(Repository $repository): void
-    {
-        if ($repository->hasHidden('laravel_cloud_request_id')) {
-            return;
-        }
-
-        $header = Env::get('LARAVEL_CLOUD_REQUEST_ID_HEADER', 'X-Request-ID');
-
-        if (! is_string($header) || $header === '') {
-            return;
-        }
-
-        $requestId = $this->requestHeader($header);
-
-        if (! is_string($requestId) || $requestId === '') {
-            return;
-        }
-
-        $repository->addHidden('laravel_cloud_request_id', $requestId);
-    }
-
-    /**
-     * Resolve a request header value.
-     */
-    protected function requestHeader(string $name): ?string
-    {
-        if ($this->app->bound('request') && $this->app['request'] instanceof Request) {
-            $value = $this->app['request']->header($name);
-
-            if (is_string($value) && $value !== '') {
-                return $value;
-            }
-        }
-
-        $key = 'HTTP_'.strtoupper(str_replace('-', '_', $name));
-
-        $value = $_SERVER[$key] ?? null;
-
-        return is_string($value) && $value !== '' ? $value : null;
     }
 }
