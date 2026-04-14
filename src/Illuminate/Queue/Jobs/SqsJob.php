@@ -58,7 +58,7 @@ class SqsJob extends Job implements JobContract
         ]);
 
         if (laravel_cloud()) {
-            CloudQueueEventEmitter::released($delay);
+            CloudQueueEventEmitter::released($this->queue, $delay);
         }
     }
 
@@ -136,7 +136,7 @@ class SqsJob extends Job implements JobContract
         parent::fire();
 
         if (laravel_cloud()) {
-            CloudQueueEventEmitter::processed();
+            CloudQueueEventEmitter::processed($this->queue);
         }
     }
 
@@ -149,7 +149,7 @@ class SqsJob extends Job implements JobContract
     public function fail($e = null)
     {
         if (laravel_cloud()) {
-            CloudQueueEventEmitter::failed();
+            CloudQueueEventEmitter::failed($this->queue);
         }
 
         parent::fail($e);

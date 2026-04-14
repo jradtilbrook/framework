@@ -212,13 +212,15 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
      */
     public function pushRaw($payload, $queue = null, array $options = [])
     {
+        $queue = $this->getQueue($queue);
+
         if (laravel_cloud()) {
             $delaySeconds = $options['DelaySeconds'] ?? 0;
-            CloudQueueEventEmitter::queued((float) $delaySeconds);
+            CloudQueueEventEmitter::queued($queue, (float) $delaySeconds);
         }
 
         return $this->sqs->sendMessage([
-            'QueueUrl' => $this->getQueue($queue), 'MessageBody' => $payload, ...$options,
+            'QueueUrl' => $queue, 'MessageBody' => $payload, ...$options,
         ])->get('MessageId');
     }
 
@@ -347,7 +349,7 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
                     $wait = null;
                 }
 
-                CloudQueueEventEmitter::processing($wait);
+                CloudQueueEventEmitter::processing($queue, $wait);
             }
 
             return new SqsJob(

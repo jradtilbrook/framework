@@ -16,11 +16,12 @@ class CloudQueueEventEmitter
     /**
      * Emit a queued job event.
      */
-    public static function queued(float $delay): void
+    public static function queued(string $queue, float $delay): void
     {
         static::emit([
             'type' => 'job.queued',
             'timestamp' => static::timestamp(),
+            'queue' => $queue,
             'delay' => $delay,
         ]);
     }
@@ -28,13 +29,14 @@ class CloudQueueEventEmitter
     /**
      * Emit a job processing event and begin duration timing.
      */
-    public static function processing(?float $wait): void
+    public static function processing(string $queue, ?float $wait): void
     {
         static::$processingStartedAt = microtime(true);
 
         static::emit([
             'type' => 'job.processing',
             'timestamp' => static::timestamp(),
+            'queue' => $queue,
             'wait' => $wait,
         ]);
     }
@@ -42,13 +44,14 @@ class CloudQueueEventEmitter
     /**
      * Emit a job processed event and stop duration timing.
      */
-    public static function processed(): void
+    public static function processed(string $queue): void
     {
         $duration = static::durationSeconds();
 
         static::emit([
             'type' => 'job.processed',
             'timestamp' => static::timestamp(),
+            'queue' => $queue,
             'duration' => $duration,
         ]);
 
@@ -58,13 +61,14 @@ class CloudQueueEventEmitter
     /**
      * Emit a job released event and stop duration timing.
      */
-    public static function released(int $backoff): void
+    public static function released(string $queue, int $backoff): void
     {
         $duration = static::durationSeconds();
 
         static::emit([
             'type' => 'job.released',
             'timestamp' => static::timestamp(),
+            'queue' => $queue,
             'backoff' => $backoff,
             'duration' => $duration,
         ]);
@@ -75,13 +79,14 @@ class CloudQueueEventEmitter
     /**
      * Emit a job failed event and stop duration timing.
      */
-    public static function failed(): void
+    public static function failed(string $queue): void
     {
         $duration = static::durationSeconds();
 
         static::emit([
             'type' => 'job.failed',
             'timestamp' => static::timestamp(),
+            'queue' => $queue,
             'duration' => $duration,
         ]);
 
