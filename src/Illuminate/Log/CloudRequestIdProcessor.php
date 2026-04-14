@@ -29,9 +29,8 @@ class CloudRequestIdProcessor implements ProcessorInterface
             return $record;
         }
 
-        return $record->with(context: [
-            ...$record->context,
-            'cloud_request_id' => $requestId,
-        ]);
+        $record->extra['cloud_request_id'] = $requestId;
+
+        return $record;
     }
 }
