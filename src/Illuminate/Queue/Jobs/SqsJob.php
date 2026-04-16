@@ -5,7 +5,6 @@ namespace Illuminate\Queue\Jobs;
 use Aws\Sqs\SqsClient;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Queue\Job as JobContract;
-use Illuminate\Queue\CloudQueueEventEmitter;
 
 class SqsJob extends Job implements JobContract
 {
@@ -56,10 +55,6 @@ class SqsJob extends Job implements JobContract
             'ReceiptHandle' => $this->job['ReceiptHandle'],
             'VisibilityTimeout' => $delay,
         ]);
-
-        if (laravel_cloud()) {
-            CloudQueueEventEmitter::released($this->queue, $delay);
-        }
     }
 
     /**
@@ -124,34 +119,5 @@ class SqsJob extends Job implements JobContract
     public function getSqsJob()
     {
         return $this->job;
-    }
-
-    /**
-     * Fire the job.
-     *
-     * @return void
-     */
-    public function fire()
-    {
-        parent::fire();
-
-        if (laravel_cloud()) {
-            CloudQueueEventEmitter::processed($this->queue);
-        }
-    }
-
-    /**
-     * Delete the job, call the "failed" method, and raise the job failed event.
-     *
-     * @param  \Throwable|null  $e
-     * @return void
-     */
-    public function fail($e = null)
-    {
-        if (laravel_cloud()) {
-            CloudQueueEventEmitter::failed($this->queue);
-        }
-
-        parent::fail($e);
     }
 }

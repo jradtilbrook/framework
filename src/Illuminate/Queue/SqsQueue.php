@@ -212,15 +212,8 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
      */
     public function pushRaw($payload, $queue = null, array $options = [])
     {
-        $queue = $this->getQueue($queue);
-
-        if (laravel_cloud()) {
-            $delaySeconds = $options['DelaySeconds'] ?? 0;
-            CloudQueueEventEmitter::queued($queue, (float) $delaySeconds);
-        }
-
         return $this->sqs->sendMessage([
-            'QueueUrl' => $queue, 'MessageBody' => $payload, ...$options,
+            'QueueUrl' => $this->getQueue($queue), 'MessageBody' => $payload, ...$options,
         ])->get('MessageId');
     }
 
@@ -337,21 +330,10 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
     {
         $response = $this->sqs->receiveMessage([
             'QueueUrl' => $queue = $this->getQueue($queue),
-            'AttributeNames' => ['ApproximateReceiveCount', 'SentTimestamp', 'ApproximateFirstReceiveTimestamp'],
+            'AttributeNames' => ['ApproximateReceiveCount'],
         ]);
 
         if (! is_null($response['Messages']) && count($response['Messages']) > 0) {
-            if (laravel_cloud()) {
-                // SQS timestamps are in milliseconds
-                $wait = ($response['Messages'][0]['Attributes']['ApproximateFirstReceiveTimestamp'] - $response['Messages'][0]['Attributes']['SentTimestamp']) / 1000;
-
-                if ($response['Messages'][0]['Attributes']['ApproximateReceiveCount'] > 1) {
-                    $wait = null;
-                }
-
-                CloudQueueEventEmitter::processing($queue, $wait);
-            }
-
             return new SqsJob(
                 $this->container, $this->sqs, $response['Messages'][0],
                 $this->connectionName, $queue
