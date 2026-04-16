@@ -9,6 +9,7 @@ use Illuminate\Contracts\Support\DeferrableProvider;
 use Illuminate\Foundation\LaravelCloudSocket;
 use Illuminate\Queue\Connectors\BackgroundConnector;
 use Illuminate\Queue\Connectors\BeanstalkdConnector;
+use Illuminate\Queue\Connectors\CloudConnector;
 use Illuminate\Queue\Connectors\DatabaseConnector;
 use Illuminate\Queue\Connectors\DeferredConnector;
 use Illuminate\Queue\Connectors\FailoverConnector;
@@ -112,6 +113,12 @@ class QueueServiceProvider extends ServiceProvider implements DeferrableProvider
         foreach (['Null', 'Sync', 'Deferred', 'Background', 'Failover', 'Database', 'Redis', 'Beanstalkd', 'Sqs'] as $connector) {
             $this->{"register{$connector}Connector"}($manager);
         }
+
+        if (($_SERVER['LARAVEL_CLOUD_MANAGED_QUEUES'] ?? null) !== '1') {
+            return;
+        }
+
+        $this->registerCloudConnector($manager);
     }
 
     /**
@@ -231,6 +238,19 @@ class QueueServiceProvider extends ServiceProvider implements DeferrableProvider
     {
         $manager->addConnector('sqs', function () {
             return new SqsConnector;
+        });
+    }
+
+    /**
+     * Register the Laravel Cloud queue connector.
+     *
+     * @param  \Illuminate\Queue\QueueManager  $manager
+     * @return void
+     */
+    protected function registerCloudConnector($manager)
+    {
+        $manager->addConnector('cloud', function () {
+            return new CloudConnector;
         });
     }
 

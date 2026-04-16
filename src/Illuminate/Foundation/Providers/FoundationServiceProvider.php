@@ -18,6 +18,7 @@ use Illuminate\Foundation\Exceptions\Renderer\Listener;
 use Illuminate\Foundation\Exceptions\Renderer\Mappers\BladeMapper;
 use Illuminate\Foundation\Exceptions\Renderer\Renderer;
 use Illuminate\Foundation\Http\HtmlDumper;
+use Illuminate\Foundation\LaravelCloudSocket;
 use Illuminate\Foundation\MaintenanceModeManager;
 use Illuminate\Foundation\Precognition;
 use Illuminate\Foundation\Vite;
@@ -96,6 +97,7 @@ class FoundationServiceProvider extends AggregateServiceProvider
         $this->registerExceptionTracking();
         $this->registerExceptionRenderer();
         $this->registerMaintenanceModeManager();
+        $this->registerLaravelCloudSocket();
     }
 
     /**
@@ -293,6 +295,17 @@ class FoundationServiceProvider extends AggregateServiceProvider
         $this->app->bind(
             MaintenanceModeContract::class,
             fn () => $this->app->make(MaintenanceModeManager::class)->driver()
+        );
+    }
+
+    /**
+     * Register the Laravel Cloud socket service.
+     *
+     * @return void
+     */
+    protected function registerLaravelCloudSocket()
+    {
+        $this->app->singleton(LaravelCloudSocket::class, fn () => new LaravelCloudSocket($_ENV['LARAVEL_CLOUD_SOCKET'] ?? null)
         );
     }
 }

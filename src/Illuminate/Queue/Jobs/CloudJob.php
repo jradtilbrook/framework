@@ -70,16 +70,6 @@ class CloudJob extends SqsJob
     }
 
     /**
-     * Delete the job from the queue.
-     *
-     * @return void
-     */
-    public function delete()
-    {
-        parent::delete();
-    }
-
-    /**
      * Fire the job.
      *
      * @return void
