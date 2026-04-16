@@ -8,6 +8,23 @@ use Illuminate\Support\Facades\Date;
 class LaravelCloudFailedJobProvider implements FailedJobProviderInterface
 {
     /**
+     * The Laravel Cloud socket instance.
+     *
+     * @var \Illuminate\Foundation\LaravelCloudSocket
+     */
+    protected LaravelCloudSocket $socket;
+
+    /**
+     * Create a new failed job provider instance.
+     *
+     * @param  \Illuminate\Foundation\LaravelCloudSocket  $socket
+     */
+    public function __construct(LaravelCloudSocket $socket)
+    {
+        $this->socket = $socket;
+    }
+
+    /**
      * Log a failed job into storage.
      *
      * @param  string  $connection
@@ -20,7 +37,7 @@ class LaravelCloudFailedJobProvider implements FailedJobProviderInterface
     {
         $id = json_decode($payload, true)['uuid'] ?? null;
 
-        LaravelCloudSocket::writeJson([
+        $this->socket->writeJson([
             'id' => $id,
             'connection' => $connection,
             'queue' => $queue,

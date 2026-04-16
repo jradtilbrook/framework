@@ -11,16 +11,33 @@ class CloudQueueEventEmitter
      *
      * @var float|null
      */
-    protected static $processingStartedAt;
+    protected ?float $processingStartedAt = null;
+
+    /**
+     * The Laravel Cloud socket instance.
+     *
+     * @var \Illuminate\Foundation\LaravelCloudSocket
+     */
+    protected LaravelCloudSocket $socket;
+
+    /**
+     * Create a new event emitter instance.
+     *
+     * @param  \Illuminate\Foundation\LaravelCloudSocket  $socket
+     */
+    public function __construct(LaravelCloudSocket $socket)
+    {
+        $this->socket = $socket;
+    }
 
     /**
      * Emit a queued job event.
      */
-    public static function queued(string $queue, float $delay): void
+    public function queued(string $queue, float $delay): void
     {
-        static::emit([
+        $this->emit([
             'type' => 'job.queued',
-            'timestamp' => static::timestamp(),
+            'timestamp' => $this->timestamp(),
             'queue' => $queue,
             'delay' => $delay,
         ]);
@@ -29,13 +46,13 @@ class CloudQueueEventEmitter
     /**
      * Emit a job processing event and begin duration timing.
      */
-    public static function processing(string $queue, ?float $wait): void
+    public function processing(string $queue, ?float $wait): void
     {
-        static::$processingStartedAt = microtime(true);
+        $this->processingStartedAt = microtime(true);
 
-        static::emit([
+        $this->emit([
             'type' => 'job.processing',
-            'timestamp' => static::timestamp(),
+            'timestamp' => $this->timestamp(),
             'queue' => $queue,
             'wait' => $wait,
         ]);
@@ -44,59 +61,59 @@ class CloudQueueEventEmitter
     /**
      * Emit a job processed event and stop duration timing.
      */
-    public static function processed(string $queue): void
+    public function processed(string $queue): void
     {
-        $duration = static::durationSeconds();
+        $duration = $this->durationSeconds();
 
-        static::emit([
+        $this->emit([
             'type' => 'job.processed',
-            'timestamp' => static::timestamp(),
+            'timestamp' => $this->timestamp(),
             'queue' => $queue,
             'duration' => $duration,
         ]);
 
-        static::forgetDuration();
+        $this->forgetDuration();
     }
 
     /**
      * Emit a job released event and stop duration timing.
      */
-    public static function released(string $queue, int $backoff): void
+    public function released(string $queue, int $backoff): void
     {
-        $duration = static::durationSeconds();
+        $duration = $this->durationSeconds();
 
-        static::emit([
+        $this->emit([
             'type' => 'job.released',
-            'timestamp' => static::timestamp(),
+            'timestamp' => $this->timestamp(),
             'queue' => $queue,
             'backoff' => $backoff,
             'duration' => $duration,
         ]);
 
-        static::forgetDuration();
+        $this->forgetDuration();
     }
 
     /**
      * Emit a job failed event and stop duration timing.
      */
-    public static function failed(string $queue): void
+    public function failed(string $queue): void
     {
-        $duration = static::durationSeconds();
+        $duration = $this->durationSeconds();
 
-        static::emit([
+        $this->emit([
             'type' => 'job.failed',
-            'timestamp' => static::timestamp(),
+            'timestamp' => $this->timestamp(),
             'queue' => $queue,
             'duration' => $duration,
         ]);
 
-        static::forgetDuration();
+        $this->forgetDuration();
     }
 
     /**
      * Get the current timestamp in seconds.
      */
-    protected static function timestamp(): float
+    protected function timestamp(): float
     {
         return microtime(true);
     }
@@ -104,28 +121,28 @@ class CloudQueueEventEmitter
     /**
      * Get the queue duration in seconds.
      */
-    protected static function durationSeconds(): ?float
+    protected function durationSeconds(): ?float
     {
-        if (static::$processingStartedAt === null) {
+        if ($this->processingStartedAt === null) {
             return null;
         }
 
-        return max(microtime(true) - static::$processingStartedAt, 0.0);
+        return max(microtime(true) - $this->processingStartedAt, 0.0);
     }
 
     /**
      * Forget a queue duration start time.
      */
-    protected static function forgetDuration(): void
+    protected function forgetDuration(): void
     {
-        static::$processingStartedAt = null;
+        $this->processingStartedAt = null;
     }
 
     /**
      * Emit a queue event.
      */
-    protected static function emit(array $record): void
+    protected function emit(array $record): void
     {
-        LaravelCloudSocket::writeJson($record);
+        $this->socket->writeJson($record);
     }
 }

@@ -2,10 +2,35 @@
 
 namespace Illuminate\Queue\Jobs;
 
+use Aws\Sqs\SqsClient;
+use Illuminate\Container\Container;
 use Illuminate\Queue\CloudQueueEventEmitter;
 
 class CloudJob extends SqsJob
 {
+    /**
+     * The event emitter instance.
+     *
+     * @var \Illuminate\Queue\CloudQueueEventEmitter
+     */
+    protected CloudQueueEventEmitter $emitter;
+
+    /**
+     * Create a new job instance.
+     *
+     * @param  \Illuminate\Container\Container  $container
+     * @param  \Aws\Sqs\SqsClient  $sqs
+     * @param  array  $job
+     * @param  string  $connectionName
+     * @param  string  $queue
+     * @param  \Illuminate\Queue\CloudQueueEventEmitter  $emitter
+     */
+    public function __construct(Container $container, SqsClient $sqs, array $job, $connectionName, $queue, CloudQueueEventEmitter $emitter)
+    {
+        parent::__construct($container, $sqs, $job, $connectionName, $queue);
+        $this->emitter = $emitter;
+    }
+
     /**
      * Get the number of times the job has been attempted.
      *
@@ -41,7 +66,7 @@ class CloudJob extends SqsJob
             'DelaySeconds' => $this->secondsUntil($delay),
         ]);
 
-        CloudQueueEventEmitter::released($this->queue, $delay);
+        $this->emitter->released($this->queue, $delay);
     }
 
     /**
@@ -52,10 +77,6 @@ class CloudJob extends SqsJob
     public function delete()
     {
         parent::delete();
-
-        $this->sqs->deleteMessage([
-            'QueueUrl' => $this->queue, 'ReceiptHandle' => $this->job['ReceiptHandle'],
-        ]);
     }
 
     /**
@@ -67,7 +88,7 @@ class CloudJob extends SqsJob
     {
         parent::fire();
 
-        CloudQueueEventEmitter::processed($this->queue);
+        $this->emitter->processed($this->queue);
     }
 
     /**
@@ -80,6 +101,6 @@ class CloudJob extends SqsJob
     {
         parent::fail($e);
 
-        CloudQueueEventEmitter::failed($this->queue);
+        $this->emitter->failed($this->queue);
     }
 }

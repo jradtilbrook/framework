@@ -6,6 +6,7 @@ use Aws\DynamoDb\DynamoDbClient;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Contracts\Events\Dispatcher as EventDispatcher;
 use Illuminate\Contracts\Support\DeferrableProvider;
+use Illuminate\Foundation\LaravelCloudSocket;
 use Illuminate\Queue\Connectors\BackgroundConnector;
 use Illuminate\Queue\Connectors\BeanstalkdConnector;
 use Illuminate\Queue\Connectors\DatabaseConnector;
@@ -328,7 +329,7 @@ class QueueServiceProvider extends ServiceProvider implements DeferrableProvider
             } elseif (isset($config['driver']) && $config['driver'] === 'database-uuids') {
                 return $this->databaseUuidFailedJobProvider($config);
             } elseif (isset($config['driver']) && $config['driver'] === 'laravel-cloud') {
-                return new LaravelCloudFailedJobProvider;
+                return new LaravelCloudFailedJobProvider($app->make(LaravelCloudSocket::class));
             } elseif (isset($config['table'])) {
                 return $this->databaseFailedJobProvider($config);
             } else {
