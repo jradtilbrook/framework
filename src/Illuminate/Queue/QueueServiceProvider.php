@@ -6,10 +6,8 @@ use Aws\DynamoDb\DynamoDbClient;
 use Illuminate\Contracts\Debug\ExceptionHandler;
 use Illuminate\Contracts\Events\Dispatcher as EventDispatcher;
 use Illuminate\Contracts\Support\DeferrableProvider;
-use Illuminate\Foundation\LaravelCloudSocket;
 use Illuminate\Queue\Connectors\BackgroundConnector;
 use Illuminate\Queue\Connectors\BeanstalkdConnector;
-use Illuminate\Queue\Connectors\CloudConnector;
 use Illuminate\Queue\Connectors\DatabaseConnector;
 use Illuminate\Queue\Connectors\DeferredConnector;
 use Illuminate\Queue\Connectors\FailoverConnector;
@@ -21,7 +19,6 @@ use Illuminate\Queue\Failed\DatabaseFailedJobProvider;
 use Illuminate\Queue\Failed\DatabaseUuidFailedJobProvider;
 use Illuminate\Queue\Failed\DynamoDbFailedJobProvider;
 use Illuminate\Queue\Failed\FileFailedJobProvider;
-use Illuminate\Queue\Failed\LaravelCloudFailedJobProvider;
 use Illuminate\Queue\Failed\NullFailedJobProvider;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Facade;
@@ -113,12 +110,6 @@ class QueueServiceProvider extends ServiceProvider implements DeferrableProvider
         foreach (['Null', 'Sync', 'Deferred', 'Background', 'Failover', 'Database', 'Redis', 'Beanstalkd', 'Sqs'] as $connector) {
             $this->{"register{$connector}Connector"}($manager);
         }
-
-        if (($_SERVER['LARAVEL_CLOUD_MANAGED_QUEUES'] ?? null) !== '1') {
-            return;
-        }
-
-        $this->registerCloudConnector($manager);
     }
 
     /**
@@ -242,19 +233,6 @@ class QueueServiceProvider extends ServiceProvider implements DeferrableProvider
     }
 
     /**
-     * Register the Laravel Cloud queue connector.
-     *
-     * @param  \Illuminate\Queue\QueueManager  $manager
-     * @return void
-     */
-    protected function registerCloudConnector($manager)
-    {
-        $manager->addConnector('cloud', function () {
-            return new CloudConnector;
-        });
-    }
-
-    /**
      * Register the queue worker.
      *
      * @return void
@@ -348,8 +326,6 @@ class QueueServiceProvider extends ServiceProvider implements DeferrableProvider
                 return $this->dynamoFailedJobProvider($config);
             } elseif (isset($config['driver']) && $config['driver'] === 'database-uuids') {
                 return $this->databaseUuidFailedJobProvider($config);
-            } elseif (isset($config['driver']) && $config['driver'] === 'laravel-cloud') {
-                return new LaravelCloudFailedJobProvider($app->make(LaravelCloudSocket::class));
             } elseif (isset($config['table'])) {
                 return $this->databaseFailedJobProvider($config);
             } else {
