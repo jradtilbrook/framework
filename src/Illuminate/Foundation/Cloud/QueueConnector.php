@@ -7,6 +7,7 @@ use Aws\Exception\AwsException;
 use Aws\Sqs\SqsClient;
 use Illuminate\Foundation\Application;
 use Illuminate\Queue\Connectors\ConnectorInterface;
+use Illuminate\Queue\Events\JobAttempted;
 use Illuminate\Queue\Events\JobQueued;
 use Illuminate\Queue\Events\WorkerStopping;
 use Illuminate\Queue\SqsQueue;
@@ -100,6 +101,10 @@ class QueueConnector implements ConnectorInterface
     {
         Worker::$restartable = false;
         Worker::$pausable = false;
+
+        $this->app['events']->listen(fn (JobAttempted $event) => $event->connectionName === $queue->getConnectionName()
+            ? $queue->finishProcessingJob()
+            : null);
 
         $this->app['events']->listen(fn (WorkerStopping $event) => match ($event->reason) {
             WorkerStopReason::TimedOut => $queue->finishProcessingJob(default: 'released'),
